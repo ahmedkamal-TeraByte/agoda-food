@@ -4,3 +4,9 @@ dist
 .env.local
 .DS_Store
 *.local
+
+# Backend compiled output
+backend/dist
+
+# Frontend build output
+frontend/dist

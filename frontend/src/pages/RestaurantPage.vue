@@ -1,16 +1,29 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppHeader from '../components/AppHeader.vue'
-import MenuItemCard from '../components/MenuItemCard.vue'
-import { getRestaurant } from '../data/mock'
+import DishCard from '../components/DishCard.vue'
+import { fetchRestaurantWithMenu } from '../services/api'
 import { useCartStore } from '../stores/cart'
+import type { RestaurantWithMenu } from '../data/types'
 
 const route = useRoute()
 const router = useRouter()
 const cart = useCartStore()
 
-const restaurant = computed(() => getRestaurant(route.params.id as string))
+const restaurant = ref<RestaurantWithMenu | null>(null)
+const loading = ref(true)
+const error = ref<string | null>(null)
+
+onMounted(async () => {
+  try {
+    restaurant.value = await fetchRestaurantWithMenu(route.params.id as string)
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Failed to load restaurant'
+  } finally {
+    loading.value = false
+  }
+})
 
 const categories = computed(() => {
   if (!restaurant.value) return []
@@ -23,7 +36,26 @@ function itemsByCategory(category: string) {
 </script>
 
 <template>
-  <div v-if="!restaurant" class="min-h-screen flex items-center justify-center text-gray-400">
+  <!-- Loading -->
+  <div v-if="loading" class="min-h-screen bg-gray-50">
+    <AppHeader />
+    <div class="h-52 bg-gray-200 animate-pulse" />
+    <div class="max-w-2xl mx-auto px-4 py-6 space-y-4">
+      <div v-for="n in 4" :key="n" class="bg-white rounded-2xl h-28 animate-pulse border border-gray-100" />
+    </div>
+  </div>
+
+  <!-- Error -->
+  <div v-else-if="error" class="min-h-screen flex items-center justify-center text-gray-400">
+    <div class="text-center">
+      <div class="text-5xl mb-3">⚠️</div>
+      <p class="font-medium text-gray-700">{{ error }}</p>
+      <button @click="router.push('/')" class="mt-4 text-brand-500 underline text-sm">Go home</button>
+    </div>
+  </div>
+
+  <!-- Not found -->
+  <div v-else-if="!restaurant" class="min-h-screen flex items-center justify-center text-gray-400">
     <div class="text-center">
       <div class="text-5xl mb-3">🍽️</div>
       <p>Restaurant not found</p>
@@ -80,10 +112,10 @@ function itemsByCategory(category: string) {
           {{ category }}
         </h2>
         <div class="grid grid-cols-2 gap-3">
-          <MenuItemCard
-            v-for="item in itemsByCategory(category)"
-            :key="item.id"
-            :item="item"
+          <DishCard
+            v-for="dish in itemsByCategory(category)"
+            :key="dish.id"
+            :dish="dish"
             :restaurant-id="restaurant.id"
             :restaurant-name="restaurant.name"
           />

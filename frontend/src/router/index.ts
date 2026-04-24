@@ -11,6 +11,6 @@ export const router = createRouter({
     { path: '/', component: HomePage },
     { path: '/restaurant/:id', component: RestaurantPage },
     { path: '/cart', component: CartPage },
-    { path: '/order-success', component: OrderSuccessPage },
+    { path: '/order/:id', component: OrderSuccessPage },
   ],
 })

@@ -1,8 +1,43 @@
-import type { Restaurant } from './types'
+/**
+ * Seed script — creates restaurants first, then dishes linked to them.
+ * Run with: npm run seed
+ */
+import mongoose from 'mongoose'
+import dotenv from 'dotenv'
+import { Restaurant } from './models/Restaurant'
+import { Dish } from './models/Dish'
 
-export const restaurants: Restaurant[] = [
+dotenv.config()
+
+const MONGODB_URI = process.env.MONGODB_URI ?? 'mongodb://localhost:27017/agoda-food'
+
+interface SeedDish {
+  name: string
+  description: string
+  price: number
+  imageUrl: string
+  category: string
+  isPopular?: boolean
+  isVegetarian?: boolean
+}
+
+interface SeedRestaurant {
+  name: string
+  cuisine: string
+  rating: number
+  reviewCount: number
+  deliveryTime: string
+  deliveryFee: number
+  minOrder: number
+  imageUrl: string
+  logoUrl: string
+  tags: string[]
+  isOpen: boolean
+  dishes: SeedDish[]
+}
+
+const seedData: SeedRestaurant[] = [
   {
-    id: 'r1',
     name: 'Somtum Der',
     cuisine: 'Thai – Isaan',
     rating: 4.8,
@@ -14,9 +49,8 @@ export const restaurants: Restaurant[] = [
     logoUrl: 'https://images.unsplash.com/photo-1569050467447-ce54b3bbc37d?w=200&auto=format&fit=crop',
     tags: ['Isaan', 'Spicy', 'Popular'],
     isOpen: true,
-    menu: [
+    dishes: [
       {
-        id: 'r1-m1',
         name: 'Som Tum Thai',
         description: 'Classic green papaya salad with dried shrimp, peanuts, and lime dressing',
         price: 89,
@@ -25,7 +59,6 @@ export const restaurants: Restaurant[] = [
         isPopular: true,
       },
       {
-        id: 'r1-m2',
         name: 'Larb Moo',
         description: 'Minced pork salad with fresh herbs, toasted rice powder, and chili',
         price: 99,
@@ -34,7 +67,6 @@ export const restaurants: Restaurant[] = [
         isPopular: true,
       },
       {
-        id: 'r1-m3',
         name: 'Sticky Rice',
         description: 'Steamed glutinous rice served in a traditional wicker basket',
         price: 25,
@@ -43,7 +75,6 @@ export const restaurants: Restaurant[] = [
         isVegetarian: true,
       },
       {
-        id: 'r1-m4',
         name: 'Grilled Chicken (Gai Yang)',
         description: 'Marinated whole chicken grilled over charcoal with tamarind dipping sauce',
         price: 179,
@@ -52,7 +83,6 @@ export const restaurants: Restaurant[] = [
         isPopular: true,
       },
       {
-        id: 'r1-m5',
         name: 'Tom Saep',
         description: 'Spicy and sour Isaan-style pork rib soup with lemongrass and galangal',
         price: 129,
@@ -62,7 +92,6 @@ export const restaurants: Restaurant[] = [
     ],
   },
   {
-    id: 'r2',
     name: 'MK Gold',
     cuisine: 'Thai – Hot Pot',
     rating: 4.5,
@@ -74,9 +103,8 @@ export const restaurants: Restaurant[] = [
     logoUrl: 'https://images.unsplash.com/photo-1583778176476-4a8b02a64c01?w=200&auto=format&fit=crop',
     tags: ['Hot Pot', 'Sharing', 'Premium'],
     isOpen: true,
-    menu: [
+    dishes: [
       {
-        id: 'r2-m1',
         name: 'MK Sukiyaki Set (2 pax)',
         description: 'Premium hot pot set with broth, mixed vegetables, tofu, and dipping sauce',
         price: 449,
@@ -85,7 +113,6 @@ export const restaurants: Restaurant[] = [
         isPopular: true,
       },
       {
-        id: 'r2-m2',
         name: 'Pork Slices',
         description: 'Thinly sliced premium pork loin (150g)',
         price: 129,
@@ -93,7 +120,6 @@ export const restaurants: Restaurant[] = [
         category: 'Meats',
       },
       {
-        id: 'r2-m3',
         name: 'Mixed Seafood Plate',
         description: 'Shrimp, squid, mussels, and fish balls (200g)',
         price: 199,
@@ -102,7 +128,6 @@ export const restaurants: Restaurant[] = [
         isPopular: true,
       },
       {
-        id: 'r2-m4',
         name: 'Noodle Bundle',
         description: 'Glass noodles, rice noodles, and egg noodles combo',
         price: 69,
@@ -113,7 +138,6 @@ export const restaurants: Restaurant[] = [
     ],
   },
   {
-    id: 'r3',
     name: 'Jay Fai',
     cuisine: 'Thai – Street Food',
     rating: 4.9,
@@ -125,9 +149,8 @@ export const restaurants: Restaurant[] = [
     logoUrl: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=200&auto=format&fit=crop',
     tags: ['Street Food', 'Michelin', 'Seafood'],
     isOpen: true,
-    menu: [
+    dishes: [
       {
-        id: 'r3-m1',
         name: 'Crab Omelette (Kai Jeaw Poo)',
         description: 'Crispy jumbo omelette packed with fresh crab meat — the signature dish',
         price: 890,
@@ -136,7 +159,6 @@ export const restaurants: Restaurant[] = [
         isPopular: true,
       },
       {
-        id: 'r3-m2',
         name: 'Drunken Noodles (Pad Kee Mao)',
         description: 'Wide rice noodles stir-fried with seafood, holy basil, and Thai chilies',
         price: 350,
@@ -145,7 +167,6 @@ export const restaurants: Restaurant[] = [
         isPopular: true,
       },
       {
-        id: 'r3-m3',
         name: 'Tom Yum Goong',
         description: 'Spicy and sour soup with river prawns, mushrooms, and lemongrass',
         price: 450,
@@ -153,7 +174,6 @@ export const restaurants: Restaurant[] = [
         category: 'Soups',
       },
       {
-        id: 'r3-m4',
         name: 'Pad Thai Goong',
         description: 'Stir-fried rice noodles with large prawns, egg, bean sprouts, and tamarind sauce',
         price: 280,
@@ -163,7 +183,6 @@ export const restaurants: Restaurant[] = [
     ],
   },
   {
-    id: 'r4',
     name: 'Pizza Company',
     cuisine: 'Italian-American',
     rating: 4.2,
@@ -175,9 +194,8 @@ export const restaurants: Restaurant[] = [
     logoUrl: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=200&auto=format&fit=crop',
     tags: ['Pizza', 'Western', 'Family'],
     isOpen: false,
-    menu: [
+    dishes: [
       {
-        id: 'r4-m1',
         name: 'Pepperoni Classic',
         description: 'Tomato sauce, mozzarella, and generous pepperoni on thin crust (10")',
         price: 299,
@@ -186,7 +204,6 @@ export const restaurants: Restaurant[] = [
         isPopular: true,
       },
       {
-        id: 'r4-m2',
         name: 'Margherita',
         description: 'San Marzano tomato, fresh mozzarella, basil, and extra-virgin olive oil',
         price: 259,
@@ -195,7 +212,6 @@ export const restaurants: Restaurant[] = [
         isVegetarian: true,
       },
       {
-        id: 'r4-m3',
         name: 'Garlic Bread (4 pcs)',
         description: 'Toasted ciabatta with garlic butter and parsley',
         price: 89,
@@ -207,6 +223,29 @@ export const restaurants: Restaurant[] = [
   },
 ]
 
-export function getRestaurant(id: string): Restaurant | undefined {
-  return restaurants.find((r) => r.id === id)
+async function seed() {
+  await mongoose.connect(MONGODB_URI)
+  console.log('Connected to MongoDB')
+
+  await Promise.all([Restaurant.deleteMany({}), Dish.deleteMany({})])
+  console.log('Cleared existing restaurants and dishes')
+
+  let totalDishes = 0
+  for (const { dishes, ...restaurantData } of seedData) {
+    const restaurant = await Restaurant.create(restaurantData)
+    const dishesWithFk = dishes.map((d) => ({ ...d, restaurantId: restaurant._id }))
+    await Dish.insertMany(dishesWithFk)
+    totalDishes += dishes.length
+    console.log(`  · ${restaurant.name} (${dishes.length} dishes)`)
+  }
+
+  console.log(`Seeded ${seedData.length} restaurants and ${totalDishes} dishes`)
+
+  await mongoose.disconnect()
+  console.log('Done')
 }
+
+seed().catch((err) => {
+  console.error('Seed failed:', err)
+  process.exit(1)
+})

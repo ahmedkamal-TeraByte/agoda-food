@@ -25,9 +25,15 @@ const total = computed(() => cart.subtotal + deliveryFee.value)
 async function submitOrder() {
   if (cart.items.length === 0 || !cart.activeRestaurantId) return
 
-  // Guest users can build a cart but must sign in before the order actually goes out.
+  // Guest users must sign in first.
   if (!user.isLoggedIn) {
     router.push({ path: '/login', query: { redirect: '/cart' } })
+    return
+  }
+
+  // Logged-in users who haven't completed onboarding go there first.
+  if (user.needsOnboarding) {
+    router.push({ path: '/onboarding', query: { redirect: '/cart' } })
     return
   }
 
@@ -46,7 +52,13 @@ async function submitOrder() {
     cart.clearCart()
     router.push(`/order/${order.id}`)
   } catch (e) {
-    orderError.value = e instanceof Error ? e.message : 'Failed to place order'
+    const err = e as Error & { code?: string }
+    // Backend double-check — redirect to onboarding if needed.
+    if (err.code === 'PROFILE_INCOMPLETE') {
+      router.push({ path: '/onboarding', query: { redirect: '/cart' } })
+      return
+    }
+    orderError.value = err.message ?? 'Failed to place order'
     isPlacing.value = false
   }
 }
@@ -154,7 +166,16 @@ async function submitOrder() {
           class="bg-brand-50 border border-brand-100 text-brand-700 text-sm rounded-xl px-4 py-3 mb-4 flex items-center gap-2"
         >
           <span>🔐</span>
-          <span>Sign in to place your order. You can keep browsing as a guest.</span>
+          <span>Sign in with LINE to place your order. You can keep browsing as a guest.</span>
+        </div>
+
+        <!-- Onboarding hint -->
+        <div
+          v-else-if="user.needsOnboarding"
+          class="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl px-4 py-3 mb-4 flex items-center gap-2"
+        >
+          <span>📋</span>
+          <span>Complete your profile (email + phone) to place an order.</span>
         </div>
 
         <!-- Error -->
@@ -170,6 +191,7 @@ async function submitOrder() {
         >
           <span v-if="isPlacing">Placing order…</span>
           <span v-else-if="!user.isLoggedIn">Sign in to place order · ฿{{ total }}</span>
+          <span v-else-if="user.needsOnboarding">Complete profile to order · ฿{{ total }}</span>
           <span v-else>Place order · ฿{{ total }}</span>
         </button>
       </div>

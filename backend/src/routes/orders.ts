@@ -24,6 +24,15 @@ router.post(
   async (req: Request<object, object, CreateOrderBody>, res: Response) => {
     const { restaurantId, items } = req.body
 
+    // Block orders until the user has completed their profile (onboarding).
+    if (!req.user!.email || !req.user!.phone) {
+      res.status(409).json({
+        error: 'Complete your profile before ordering',
+        code: 'PROFILE_INCOMPLETE',
+      })
+      return
+    }
+
     if (!restaurantId || !Array.isArray(items) || items.length === 0) {
       res.status(400).json({ error: 'restaurantId and at least one item are required' })
       return

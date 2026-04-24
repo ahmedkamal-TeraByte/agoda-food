@@ -10,6 +10,7 @@
     "type-check": "vue-tsc --noEmit"
   },
   "dependencies": {
+    "@line/liff": "^2.28.0",
     "@vueuse/core": "^14.2.1",
     "pinia": "^3.0.4",
     "vue": "^3.5.32",

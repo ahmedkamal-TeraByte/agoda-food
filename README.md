@@ -60,13 +60,38 @@ Open [http://localhost:3000](http://localhost:3000).
 1. ✅ Vue 3 UI (mocked)
 2. ✅ Express + MongoDB backend
 3. ✅ UI connected to real API
-3a. ✅ User profiles + order history (username login stub, guest browsing)
-4. ⏭️ LINE login + LIFF (replaces the username stub at `routes/auth.ts` + `middleware/auth.ts`)
+3a. ✅ User profiles + order history
+4. ✅ LINE Login + LIFF
 5. ⏭️ Reliability (Redis, BullMQ, Zod)
 
-### Auth model (Stage 3a)
+### Auth model (Stage 4)
 
-- Demo login: enter a username on `/login` (try `alice` or `bob`).
-- The browser stores the returned user id in `localStorage` and sends it as `X-User-Id` on every request.
-- Browsing restaurants and menus is public. Placing an order, viewing your profile or order history requires login.
-- Stage 4 swaps `POST /api/auth/login` for `POST /api/auth/line` (verifies a LIFF id token, upserts the user by `lineUserId`). The rest of the app is unchanged.
+**External browser** — "Login with LINE" button triggers the OAuth 2.0 PKCE-like flow:
+1. Frontend generates a random `state`, stores it in `sessionStorage`, redirects to `https://access.line.me/oauth2/v2.1/authorize`.
+2. LINE redirects back to `/auth/line/callback?code=...&state=...`.
+3. Frontend verifies `state`, POSTs `code` to `POST /api/auth/line/exchange`.
+4. Backend exchanges the code, verifies the id_token with LINE, upserts the user by `lineUserId`, returns a signed JWT.
+5. Frontend stores `{ user, token }` in `localStorage`; the JWT is sent as `Authorization: Bearer <token>` on every request.
+
+**Inside LINE (LIFF)** — the app is opened via the LIFF URL:
+1. On boot, `liff.init()` is called; `liff.isInClient()` returns `true`.
+2. If not yet logged in, `liff.login()` is called (handles redirect internally).
+3. `liff.getIDToken()` is POSTed to `POST /api/auth/line/liff` — no code exchange needed.
+4. Same JWT + user response, same `localStorage` storage.
+
+**Onboarding** — LINE never provides phone and doesn't always provide email.
+New users are redirected to `/onboarding` to complete email + phone before placing an order.
+
+### Environment variables (before deploying)
+
+Copy `.env.example` → `.env` in `backend/`, and `frontend/.env.example` → `frontend/.env`.
+
+| Variable | Where | Description |
+|---|---|---|
+| `LINE_CHANNEL_ID` | backend | LINE Login channel ID |
+| `LINE_CHANNEL_SECRET` | backend | LINE Login channel secret |
+| `LINE_LOGIN_REDIRECT_URI` | backend | Callback URL registered in LINE console |
+| `JWT_SECRET` | backend | Long random string for signing JWTs |
+| `JWT_EXPIRES_IN` | backend | Token TTL e.g. `7d` |
+| `VITE_LINE_CHANNEL_ID` | frontend | Same channel ID (not a secret) |
+| `VITE_LIFF_ID` | frontend | LIFF app ID from LINE console |

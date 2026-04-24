@@ -54,10 +54,11 @@ export interface OrderItem {
 export interface User {
   id: string
   displayName: string
-  email: string
-  phone: string
+  email?: string
+  phone?: string
   pictureUrl?: string
   deliveryLocation?: string
+  needsOnboarding?: boolean
 }
 
 export type OrderStatus = 'pending' | 'confirmed' | 'preparing' | 'delivered' | 'cancelled'

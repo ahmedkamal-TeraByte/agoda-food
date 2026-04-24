@@ -3,6 +3,8 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useCartStore } from '../stores/cart'
 import { useUserStore } from '../stores/user'
 import { useRouter } from 'vue-router'
+import { setAuthToken } from '../services/api'
+import { isInLineClient, liffLogout } from '../lib/liff'
 
 const cart = useCartStore()
 const user = useUserStore()
@@ -25,7 +27,9 @@ function go(path: string) {
 }
 
 function logout() {
+  if (isInLineClient()) liffLogout()
   user.clear()
+  setAuthToken(null)
   cart.clearCart()
   closeMenu()
   router.push('/')
@@ -62,7 +66,16 @@ onBeforeUnmount(() => document.removeEventListener('click', handleDocClick))
             @click="toggleMenu"
             class="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-1.5 rounded-full text-sm font-medium"
           >
-            <span class="w-6 h-6 rounded-full bg-brand-500 text-white flex items-center justify-center text-xs font-bold">
+            <img
+              v-if="user.user!.pictureUrl"
+              :src="user.user!.pictureUrl"
+              class="w-6 h-6 rounded-full object-cover"
+              alt="avatar"
+            />
+            <span
+              v-else
+              class="w-6 h-6 rounded-full bg-brand-500 text-white flex items-center justify-center text-xs font-bold"
+            >
               {{ user.user!.displayName.charAt(0).toUpperCase() }}
             </span>
             <span class="hidden sm:inline">{{ user.user!.displayName }}</span>

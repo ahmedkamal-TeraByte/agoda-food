@@ -2,14 +2,10 @@
  * Seed script — creates restaurants first, then dishes linked to them.
  * Run with: npm run seed
  */
+import 'dotenv/config'
 import mongoose from 'mongoose'
-import dotenv from 'dotenv'
 import { Restaurant } from './models/Restaurant'
 import { Dish, type DishTag } from './models/Dish'
-import { User } from './models/User'
-import { Order } from './models/Order'
-
-dotenv.config()
 
 const MONGODB_URI = process.env.MONGODB_URI ?? 'mongodb://localhost:27017/agoda-food'
 
@@ -226,21 +222,6 @@ const seedData: SeedRestaurant[] = [
   },
 ]
 
-const demoUsers = [
-  {
-    displayName: 'Alice Chen',
-    email: 'alice@agoda.com',
-    phone: '+66 81 234 5678',
-    deliveryLocation: 'Agoda HQ — Floor 27',
-  },
-  {
-    displayName: 'Bob Tanaka',
-    email: 'bob@agoda.com',
-    phone: '+66 92 345 6789',
-    deliveryLocation: 'Agoda HQ — Floor 15',
-  },
-]
-
 async function seed() {
   await mongoose.connect(MONGODB_URI)
   console.log('Connected to MongoDB')
@@ -258,10 +239,8 @@ async function seed() {
   await Promise.all([
     safeDrop('restaurants'),
     safeDrop('dishes'),
-    safeDrop('users'),
-    safeDrop('orders'),
   ])
-  console.log('Cleared restaurants, dishes, users, and orders (with indexes)')
+  console.log('Cleared restaurants and dishes (with indexes)')
 
   let totalDishes = 0
   for (const { dishes, ...restaurantData } of seedData) {
@@ -272,15 +251,7 @@ async function seed() {
     console.log(`  · ${restaurant.name} (${dishes.length} dishes)`)
   }
 
-  const users = await User.insertMany(demoUsers)
-  console.log('Demo users:')
-  for (const u of users) {
-    console.log(`  · ${u.displayName.padEnd(14)} email=${u.email.padEnd(18)} _id=${u._id}`)
-  }
-
-  console.log(
-    `Seeded ${seedData.length} restaurants, ${totalDishes} dishes, and ${users.length} users`,
-  )
+  console.log(`Seeded ${seedData.length} restaurants and ${totalDishes} dishes`)
 
   await mongoose.disconnect()
   console.log('Done')

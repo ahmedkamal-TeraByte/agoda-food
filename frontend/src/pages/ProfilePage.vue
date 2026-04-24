@@ -4,7 +4,6 @@ import { useRouter } from 'vue-router'
 import AppHeader from '../components/AppHeader.vue'
 import { fetchMe, updateMe } from '../services/api'
 import { useUserStore } from '../stores/user'
-import type { User } from '../data/types'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -21,13 +20,6 @@ const saving = ref(false)
 const error = ref<string | null>(null)
 const success = ref(false)
 
-function hydrate(u: User) {
-  form.value.displayName = u.displayName
-  form.value.email = u.email
-  form.value.phone = u.phone
-  form.value.deliveryLocation = u.deliveryLocation ?? ''
-}
-
 onMounted(async () => {
   if (!userStore.isLoggedIn) {
     router.replace({ path: '/login', query: { redirect: '/profile' } })
@@ -35,8 +27,11 @@ onMounted(async () => {
   }
   try {
     const me = await fetchMe()
-    userStore.setUser(me)
-    hydrate(me)
+    userStore.updateUser(me)
+    form.value.displayName = me.displayName
+    form.value.email = me.email ?? ''
+    form.value.phone = me.phone ?? ''
+    form.value.deliveryLocation = me.deliveryLocation ?? ''
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Failed to load profile'
   } finally {
@@ -55,8 +50,11 @@ async function save() {
       phone: form.value.phone.trim(),
       deliveryLocation: form.value.deliveryLocation.trim() || undefined,
     })
-    userStore.setUser(updated)
-    hydrate(updated)
+    userStore.updateUser(updated)
+    form.value.displayName = updated.displayName
+    form.value.email = updated.email ?? ''
+    form.value.phone = updated.phone ?? ''
+    form.value.deliveryLocation = updated.deliveryLocation ?? ''
     success.value = true
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Failed to save'

@@ -1,11 +1,10 @@
 import { Schema, model, Document } from 'mongoose'
 
 export interface IUser extends Document {
-  // Populated by LINE login in Stage 4. Kept optional now so dev users don't need one.
   lineUserId?: string
   displayName: string
-  email: string
-  phone: string
+  email?: string   // optional until the user completes onboarding
+  phone?: string   // optional until the user completes onboarding
   pictureUrl?: string
   deliveryLocation?: string
   createdAt: Date
@@ -17,18 +16,18 @@ const UserSchema = new Schema<IUser>(
     lineUserId: {
       type: String,
       unique: true,
-      sparse: true, // allows many docs without it while keeping uniqueness when present
+      sparse: true,
     },
     displayName: { type: String, required: true, trim: true },
     email: {
       type: String,
-      required: true,
       unique: true,
+      sparse: true, // nulls don't collide; still unique when present
       trim: true,
       lowercase: true,
       match: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
     },
-    phone: { type: String, required: true, trim: true },
+    phone: { type: String, trim: true },
     pictureUrl: { type: String },
     deliveryLocation: { type: String, trim: true },
   },

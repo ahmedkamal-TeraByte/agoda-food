@@ -1,35 +1,93 @@
 import { Router, Request, Response } from 'express'
-import { User } from '../models/User'
+import { User, IUser } from '../models/User'
+import { exchangeCodeForTokens, verifyIdToken, LineClaims } from '../lib/line'
+import { signSession } from '../lib/jwt'
 
 const router = Router()
 
+interface AuthResponse {
+  token: string
+  user: IUser
+  needsOnboarding: boolean
+}
+
 /**
- * POST /api/auth/login
- * Body: { email }
- *
- * Dev-only "login" — looks up a user by email. Returns the user doc.
- * The client stores the user's id and sends it back via the x-user-id header.
- *
- * Stage 4 replaces this with POST /api/auth/line which verifies a LINE ID token
- * and upserts a User by lineUserId. The rest of the app stays unchanged.
+ * Upserts a User by lineUserId (the LINE `sub` claim).
+ * - First login: creates the doc with whatever LINE provides (name, picture, email if scoped).
+ * - Subsequent logins: never overwrites fields the user has manually edited.
+ *   Only backfills pictureUrl if it was previously unset.
  */
-router.post('/login', async (req: Request<object, object, { email?: string }>, res: Response) => {
-  const email = req.body.email?.trim().toLowerCase()
-  if (!email) {
-    res.status(400).json({ error: 'email is required' })
-    return
+async function resolveLineUser(claims: LineClaims): Promise<AuthResponse> {
+  let user = await User.findOne({ lineUserId: claims.sub })
+
+  if (!user) {
+    user = await User.create({
+      lineUserId: claims.sub,
+      displayName: claims.name,
+      pictureUrl: claims.picture,
+      email: claims.email,
+    })
+  } else {
+    // Backfill picture only if the user never had one; never clobber edited fields.
+    if (!user.pictureUrl && claims.picture) {
+      user.pictureUrl = claims.picture
+      await user.save()
+    }
   }
 
-  try {
-    const user = await User.findOne({ email })
-    if (!user) {
-      res.status(404).json({ error: `No user found for email "${email}"` })
+  const needsOnboarding = !user.email || !user.phone
+  const token = signSession(user._id.toString())
+  return { token, user, needsOnboarding }
+}
+
+/**
+ * POST /api/auth/line/exchange
+ * External-browser OAuth flow. Receives the authorization code from LINE,
+ * exchanges it for tokens, verifies the id_token, upserts the user.
+ */
+router.post(
+  '/line/exchange',
+  async (req: Request<object, object, { code?: string; redirectUri?: string }>, res: Response) => {
+    const { code, redirectUri } = req.body
+    if (!code || !redirectUri) {
+      res.status(400).json({ error: 'code and redirectUri are required' })
       return
     }
-    res.json(user)
-  } catch (err) {
-    res.status(500).json({ error: 'Login failed' })
-  }
-})
+
+    try {
+      const tokens = await exchangeCodeForTokens(code, redirectUri)
+      const claims = await verifyIdToken(tokens.id_token)
+      const result = await resolveLineUser(claims)
+      res.json(result)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'LINE exchange failed'
+      res.status(502).json({ error: msg })
+    }
+  },
+)
+
+/**
+ * POST /api/auth/line/liff
+ * In-LINE LIFF flow. The LIFF SDK gives us an id_token directly — no code exchange needed.
+ */
+router.post(
+  '/line/liff',
+  async (req: Request<object, object, { idToken?: string }>, res: Response) => {
+    const { idToken } = req.body
+    if (!idToken) {
+      res.status(400).json({ error: 'idToken is required' })
+      return
+    }
+
+    try {
+      const claims = await verifyIdToken(idToken)
+      const result = await resolveLineUser(claims)
+      res.json(result)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'LIFF token verification failed'
+      res.status(502).json({ error: msg })
+    }
+  },
+)
 
 export default router

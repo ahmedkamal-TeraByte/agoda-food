@@ -3,18 +3,16 @@ import { DISH_TAGS } from '../data/types'
 
 const BASE = '/api'
 
-// The currently-signed-in user id, injected as an x-user-id header on every
-// request. Set by the user store after login; cleared on logout.
-// Stage 4 replaces this with a real LINE-issued token, but the wiring stays put.
-let currentUserId: string | null = null
+// JWT for the current session. Set by the user store after LINE login; cleared on logout.
+let currentToken: string | null = null
 
-export function setAuthUserId(id: string | null) {
-  currentUserId = id
+export function setAuthToken(token: string | null) {
+  currentToken = token
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (currentUserId) headers['X-User-Id'] = currentUserId
+  if (currentToken) headers['Authorization'] = `Bearer ${currentToken}`
 
   const res = await fetch(`${BASE}${path}`, {
     ...init,
@@ -22,8 +20,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   })
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
-    const err = new Error(body.error ?? `Request failed: ${res.status}`) as Error & { status?: number }
+    const err = new Error(body.error ?? `Request failed: ${res.status}`) as Error & {
+      status?: number
+      code?: string
+    }
     err.status = res.status
+    err.code = body.code
     throw err
   }
   return res.json()
@@ -82,10 +84,11 @@ function toUser(u: Record<string, unknown>): User {
   return {
     id: u._id as string,
     displayName: u.displayName as string,
-    email: u.email as string,
-    phone: u.phone as string,
+    email: u.email as string | undefined,
+    phone: u.phone as string | undefined,
     pictureUrl: u.pictureUrl as string | undefined,
     deliveryLocation: u.deliveryLocation as string | undefined,
+    needsOnboarding: u.needsOnboarding as boolean | undefined,
   }
 }
 
@@ -122,15 +125,45 @@ export async function fetchOrder(id: string): Promise<Order> {
   return toOrder(data)
 }
 
-// --- Auth + user ---
+// --- Auth ---
 
-export async function login(email: string): Promise<User> {
-  const data = await request<Record<string, unknown>>('/auth/login', {
-    method: 'POST',
-    body: JSON.stringify({ email }),
-  })
-  return toUser(data)
+export interface LineAuthResponse {
+  token: string
+  user: User
+  needsOnboarding: boolean
 }
+
+function toLineAuthResponse(raw: Record<string, unknown>): LineAuthResponse {
+  const userRaw = raw.user as Record<string, unknown>
+  return {
+    token: raw.token as string,
+    user: toUser(userRaw),
+    needsOnboarding: raw.needsOnboarding as boolean,
+  }
+}
+
+/** Exchange an authorization code (external-browser OAuth flow). */
+export async function exchangeLineCode(payload: {
+  code: string
+  redirectUri: string
+}): Promise<LineAuthResponse> {
+  const raw = await request<Record<string, unknown>>('/auth/line/exchange', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+  return toLineAuthResponse(raw)
+}
+
+/** Verify a LIFF id_token (in-LINE flow). */
+export async function verifyLiffToken(idToken: string): Promise<LineAuthResponse> {
+  const raw = await request<Record<string, unknown>>('/auth/line/liff', {
+    method: 'POST',
+    body: JSON.stringify({ idToken }),
+  })
+  return toLineAuthResponse(raw)
+}
+
+// --- User ---
 
 export async function fetchMe(): Promise<User> {
   const data = await request<Record<string, unknown>>('/users/me')

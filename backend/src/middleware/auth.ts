@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
-import { Types } from 'mongoose'
 import { User, IUser } from '../models/User'
+import { verifySession } from '../lib/jwt'
 
 // Augment Express.Request so req.user is typed on protected routes.
 declare global {
@@ -11,23 +11,24 @@ declare global {
   }
 }
 
-/**
- * Stub auth used until Stage 4 (LINE login).
- * Reads the current user id from the `x-user-id` header.
- *
- * When LINE login ships, this file is the single place that changes:
- * it starts verifying a LIFF id-token / JWT and populates req.user from that.
- * Every route stays the same.
- */
-async function resolveUserFromHeader(req: Request): Promise<IUser | null> {
-  const raw = req.header('x-user-id')
-  if (!raw || !Types.ObjectId.isValid(raw)) return null
-  return User.findById(raw)
+async function resolveUserFromBearer(req: Request): Promise<IUser | null> {
+  const header = req.header('Authorization') ?? ''
+  if (!header.startsWith('Bearer ')) return null
+  const token = header.slice(7).trim()
+  if (!token) return null
+
+  try {
+    const userId = verifySession(token)
+    return await User.findById(userId)
+  } catch {
+    // expired, tampered, or user deleted — treat as unauthenticated
+    return null
+  }
 }
 
-// Rejects the request if no valid user is authenticated.
+// Rejects the request if no valid JWT is present.
 export async function requireUser(req: Request, res: Response, next: NextFunction) {
-  const user = await resolveUserFromHeader(req)
+  const user = await resolveUserFromBearer(req)
   if (!user) {
     res.status(401).json({ error: 'Sign in required' })
     return
@@ -36,10 +37,9 @@ export async function requireUser(req: Request, res: Response, next: NextFunctio
   next()
 }
 
-// Attaches req.user if a valid id is provided but never blocks the request.
-// Used for endpoints that behave differently for guests vs signed-in users.
+// Attaches req.user when a valid JWT is present, but never blocks the request.
 export async function optionalUser(req: Request, _res: Response, next: NextFunction) {
-  const user = await resolveUserFromHeader(req).catch(() => null)
+  const user = await resolveUserFromBearer(req).catch(() => null)
   if (user) req.user = user
   next()
 }

@@ -5,43 +5,13 @@ import { requireUser } from '../middleware/auth'
 
 const router = Router()
 
-interface RegisterBody {
-  displayName: string
-  email: string
-  phone: string
-  deliveryLocation?: string
-  pictureUrl?: string
-}
-
-/**
- * POST /api/users
- * Creates a new user. Used by the seed script now and by LINE login later
- * (Stage 4 will build a thin wrapper that extracts these fields from a LINE profile).
- */
-router.post('/', async (req: Request<object, object, RegisterBody>, res: Response) => {
-  const { displayName, email, phone, deliveryLocation, pictureUrl } = req.body
-
-  if (!displayName || !email || !phone) {
-    res.status(400).json({ error: 'displayName, email and phone are required' })
-    return
-  }
-
-  try {
-    const user = await User.create({ displayName, email, phone, deliveryLocation, pictureUrl })
-    res.status(201).json(user)
-  } catch (err) {
-    const mongoErr = err as { code?: number; message?: string }
-    if (mongoErr.code === 11000) {
-      res.status(409).json({ error: 'email already in use' })
-      return
-    }
-    res.status(400).json({ error: mongoErr.message ?? 'Failed to create user' })
-  }
-})
-
-// GET /api/users/me
+// GET /api/users/me — includes computed needsOnboarding flag
 router.get('/me', requireUser, (req: Request, res: Response) => {
-  res.json(req.user)
+  const u = req.user!
+  res.json({
+    ...u.toObject(),
+    needsOnboarding: !u.email || !u.phone,
+  })
 })
 
 interface UpdateMeBody {
@@ -71,7 +41,14 @@ router.patch('/me', requireUser, async (req: Request<object, object, UpdateMeBod
       new: true,
       runValidators: true,
     })
-    res.json(updated)
+    if (!updated) {
+      res.status(404).json({ error: 'User not found' })
+      return
+    }
+    res.json({
+      ...updated.toObject(),
+      needsOnboarding: !updated.email || !updated.phone,
+    })
   } catch (err) {
     const mongoErr = err as { code?: number; message?: string }
     if (mongoErr.code === 11000) {

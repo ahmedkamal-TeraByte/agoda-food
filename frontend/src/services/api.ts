@@ -1,9 +1,8 @@
-import type { Restaurant, RestaurantWithMenu, Dish, DishTag, Order, User } from '../data/types'
-import { DISH_TAGS } from '../data/types'
+import type { Restaurant, RestaurantWithMenu, MenuItem, MenuItemTag, Order, User, PromptPayQR } from '../data/types'
+import { MENU_ITEM_TAGS } from '../data/types'
 
 const BASE = '/api'
 
-// JWT for the current session. Set by the user store after LINE login; cleared on logout.
 let currentToken: string | null = null
 
 export function setAuthToken(token: string | null) {
@@ -31,17 +30,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json()
 }
 
-// Mongoose returns _id; normalise to id everywhere so UI code never sees raw DB fields.
-function toDish(d: Record<string, unknown>): Dish {
+function toMenuItem(d: Record<string, unknown>): MenuItem {
   const rawTags = Array.isArray(d.tags) ? (d.tags as string[]) : []
-  const tags = rawTags.filter((t): t is DishTag => (DISH_TAGS as readonly string[]).includes(t))
+  const tags = rawTags.filter((t): t is MenuItemTag => (MENU_ITEM_TAGS as readonly string[]).includes(t))
   return {
     id: d._id as string,
     restaurantId: d.restaurantId as string,
     name: d.name as string,
     description: d.description as string,
     price: d.price as number,
-    imageUrl: d.imageUrl as string,
+    imageUrl: d.imageUrl as string | undefined,
     category: d.category as string,
     tags,
     isAvailable: (d.isAvailable as boolean | undefined) ?? true,
@@ -49,6 +47,7 @@ function toDish(d: Record<string, unknown>): Dish {
 }
 
 function toRestaurant(r: Record<string, unknown>): Restaurant {
+  const ow = r.orderWindow as Record<string, number> | undefined
   return {
     id: r._id as string,
     name: r.name as string,
@@ -62,20 +61,37 @@ function toRestaurant(r: Record<string, unknown>): Restaurant {
     logoUrl: r.logoUrl as string,
     tags: r.tags as string[],
     isOpen: r.isOpen as boolean,
+    status: r.status as Restaurant['status'],
+    ownerUserId: r.ownerUserId as string,
+    orderWindow: ow
+      ? { openHour: ow.openHour, closeHour: ow.closeHour, deliveryHour: ow.deliveryHour }
+      : undefined,
+    referral: r.referral as Restaurant['referral'],
   }
 }
 
 function toOrder(o: Record<string, unknown>): Order {
+  const rawItems = (o.items as Record<string, unknown>[]) ?? []
+  const items = rawItems.map((item) => ({
+    menuItemId: (item.menuItemId ?? item.dishId) as string,
+    name: item.name as string,
+    price: item.price as number,
+    imageUrl: item.imageUrl as string | undefined,
+    quantity: item.quantity as number,
+    note: (item.note ?? '') as string,
+  }))
   return {
     id: o._id as string,
     userId: o.userId as string,
     restaurantId: o.restaurantId as string,
     restaurantName: o.restaurantName as string,
-    items: o.items as Order['items'],
+    items,
     subtotal: o.subtotal as number,
     deliveryFee: o.deliveryFee as number,
     total: o.total as number,
     status: o.status as Order['status'],
+    paymentStatus: o.paymentStatus as Order['paymentStatus'],
+    serviceDate: o.serviceDate as string | undefined,
     createdAt: o.createdAt as string,
   }
 }
@@ -89,27 +105,55 @@ function toUser(u: Record<string, unknown>): User {
     pictureUrl: u.pictureUrl as string | undefined,
     deliveryLocation: u.deliveryLocation as string | undefined,
     needsOnboarding: u.needsOnboarding as boolean | undefined,
+    role: u.role as User['role'],
+    emailVerified: u.emailVerified as boolean | undefined,
   }
 }
+
+// --- Restaurants ---
 
 export async function fetchRestaurants(): Promise<Restaurant[]> {
   const data = await request<Record<string, unknown>[]>('/restaurants')
   return data.map(toRestaurant)
 }
 
-// Hits both the restaurant and its menu endpoints in parallel so the
-// RestaurantPage only waits for one round-trip.
 export async function fetchRestaurantWithMenu(id: string): Promise<RestaurantWithMenu> {
-  const [restaurantRaw, dishesRaw] = await Promise.all([
+  const [restaurantRaw, menuItemsRaw] = await Promise.all([
     request<Record<string, unknown>>(`/restaurants/${id}`),
     request<Record<string, unknown>[]>(`/restaurants/${id}/menu`),
   ])
-  return { ...toRestaurant(restaurantRaw), menu: dishesRaw.map(toDish) }
+  return { ...toRestaurant(restaurantRaw), menu: menuItemsRaw.map(toMenuItem) }
 }
+
+export interface ApplyRestaurantPayload {
+  name: string
+  cuisine: string
+  imageUrl?: string
+  logoUrl?: string
+  referral: { name: string; email: string }
+}
+
+export async function applyForRestaurant(payload: ApplyRestaurantPayload): Promise<Restaurant> {
+  const data = await request<Record<string, unknown>>('/restaurants/apply', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+  return toRestaurant(data)
+}
+
+export async function verifyReferral(restaurantId: string, code: string): Promise<{ restaurant: Restaurant; user: User }> {
+  const data = await request<{ restaurant: Record<string, unknown>; user: Record<string, unknown> }>(
+    `/restaurants/${restaurantId}/verify-referral`,
+    { method: 'POST', body: JSON.stringify({ code }) },
+  )
+  return { restaurant: toRestaurant(data.restaurant), user: toUser(data.user) }
+}
+
+// --- Orders ---
 
 export interface PlaceOrderPayload {
   restaurantId: string
-  items: { dishId: string; quantity: number; note?: string }[]
+  items: { menuItemId: string; quantity: number; note?: string }[]
 }
 
 export async function placeOrder(payload: PlaceOrderPayload): Promise<Order> {
@@ -125,6 +169,19 @@ export async function fetchOrder(id: string): Promise<Order> {
   return toOrder(data)
 }
 
+export async function payOrder(orderId: string): Promise<PromptPayQR> {
+  return request<PromptPayQR>(`/orders/${orderId}/pay`, { method: 'POST' })
+}
+
+export async function fetchOrderPayment(orderId: string): Promise<PromptPayQR> {
+  return request<PromptPayQR>(`/orders/${orderId}/payment`)
+}
+
+export async function cancelOrder(orderId: string): Promise<Order> {
+  const data = await request<Record<string, unknown>>(`/orders/${orderId}/cancel`, { method: 'POST' })
+  return toOrder(data)
+}
+
 // --- Auth ---
 
 export interface LineAuthResponse {
@@ -134,19 +191,14 @@ export interface LineAuthResponse {
 }
 
 function toLineAuthResponse(raw: Record<string, unknown>): LineAuthResponse {
-  const userRaw = raw.user as Record<string, unknown>
   return {
     token: raw.token as string,
-    user: toUser(userRaw),
+    user: toUser(raw.user as Record<string, unknown>),
     needsOnboarding: raw.needsOnboarding as boolean,
   }
 }
 
-/** Exchange an authorization code (external-browser OAuth flow). */
-export async function exchangeLineCode(payload: {
-  code: string
-  redirectUri: string
-}): Promise<LineAuthResponse> {
+export async function exchangeLineCode(payload: { code: string; redirectUri: string }): Promise<LineAuthResponse> {
   const raw = await request<Record<string, unknown>>('/auth/line/exchange', {
     method: 'POST',
     body: JSON.stringify(payload),
@@ -154,13 +206,33 @@ export async function exchangeLineCode(payload: {
   return toLineAuthResponse(raw)
 }
 
-/** Verify a LIFF id_token (in-LINE flow). */
 export async function verifyLiffToken(idToken: string): Promise<LineAuthResponse> {
   const raw = await request<Record<string, unknown>>('/auth/line/liff', {
     method: 'POST',
     body: JSON.stringify({ idToken }),
   })
   return toLineAuthResponse(raw)
+}
+
+// --- Email OTP ---
+
+export async function sendOtp(email: string, purpose: 'user_verify' | 'referral_verify'): Promise<void> {
+  await request('/auth/email/send-otp', {
+    method: 'POST',
+    body: JSON.stringify({ email, purpose }),
+  })
+}
+
+export async function verifyOtp(
+  email: string,
+  purpose: 'user_verify' | 'referral_verify',
+  code: string,
+): Promise<{ ok: boolean; user: User }> {
+  const data = await request<{ ok: boolean; user: Record<string, unknown> }>('/auth/email/verify-otp', {
+    method: 'POST',
+    body: JSON.stringify({ email, purpose, code }),
+  })
+  return { ok: data.ok, user: toUser(data.user) }
 }
 
 // --- User ---
@@ -188,4 +260,58 @@ export async function updateMe(payload: UpdateProfilePayload): Promise<User> {
 export async function fetchMyOrders(): Promise<Order[]> {
   const data = await request<Record<string, unknown>[]>('/users/me/orders')
   return data.map(toOrder)
+}
+
+// --- Merchant ---
+
+export async function fetchMerchantRestaurant(): Promise<Restaurant> {
+  const data = await request<Record<string, unknown>>('/merchant/restaurant')
+  return toRestaurant(data)
+}
+
+export async function updateMerchantRestaurant(payload: Partial<Restaurant>): Promise<Restaurant> {
+  const data = await request<Record<string, unknown>>('/merchant/restaurant', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+  return toRestaurant(data)
+}
+
+export async function fetchMerchantMenuItems(): Promise<MenuItem[]> {
+  const data = await request<Record<string, unknown>[]>('/merchant/menu-items')
+  return data.map(toMenuItem)
+}
+
+export async function createMerchantMenuItem(payload: Partial<MenuItem>): Promise<MenuItem> {
+  const data = await request<Record<string, unknown>>('/merchant/menu-items', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+  return toMenuItem(data)
+}
+
+export async function updateMerchantMenuItem(menuItemId: string, payload: Partial<MenuItem>): Promise<MenuItem> {
+  const data = await request<Record<string, unknown>>(`/merchant/menu-items/${menuItemId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+  return toMenuItem(data)
+}
+
+export async function deleteMerchantMenuItem(menuItemId: string): Promise<void> {
+  await request(`/merchant/menu-items/${menuItemId}`, { method: 'DELETE' })
+}
+
+export async function fetchMerchantOrders(serviceDate?: string): Promise<Order[]> {
+  const qs = serviceDate ? `?serviceDate=${serviceDate}` : ''
+  const data = await request<Record<string, unknown>[]>(`/merchant/orders${qs}`)
+  return data.map(toOrder)
+}
+
+export async function updateOrderStatus(orderId: string, status: string): Promise<Order> {
+  const data = await request<Record<string, unknown>>(`/orders/${orderId}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  })
+  return toOrder(data)
 }

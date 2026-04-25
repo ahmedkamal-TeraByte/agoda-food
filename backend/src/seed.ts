@@ -5,17 +5,24 @@
 import 'dotenv/config'
 import mongoose from 'mongoose'
 import { Restaurant } from './models/Restaurant'
-import { Dish, type DishTag } from './models/Dish'
+import { MenuItem, type MenuItemTag } from './models/MenuItem'
+import { User } from './models/User'
 
 const MONGODB_URI = process.env.MONGODB_URI ?? 'mongodb://localhost:27017/agoda-food'
 
-interface SeedDish {
+interface SeedMenuItem {
   name: string
   description: string
   price: number
   imageUrl: string
   category: string
-  tags?: DishTag[]
+  tags?: MenuItemTag[]
+}
+
+interface SeedOrderWindow {
+  openHour: number
+  closeHour: number
+  deliveryHour: number
 }
 
 interface SeedRestaurant {
@@ -30,7 +37,9 @@ interface SeedRestaurant {
   logoUrl: string
   tags: string[]
   isOpen: boolean
-  dishes: SeedDish[]
+  status: 'active' | 'draft' | 'suspended'
+  orderWindow: SeedOrderWindow
+  menuItems: SeedMenuItem[]
 }
 
 const seedData: SeedRestaurant[] = [
@@ -46,7 +55,9 @@ const seedData: SeedRestaurant[] = [
     logoUrl: 'https://images.unsplash.com/photo-1569050467447-ce54b3bbc37d?w=200&auto=format&fit=crop',
     tags: ['Isaan', 'Spicy', 'Popular'],
     isOpen: true,
-    dishes: [
+    status: 'active',
+    orderWindow: { openHour: 17, closeHour: 10, deliveryHour: 12 },
+    menuItems: [
       {
         name: 'Som Tum Thai',
         description: 'Classic green papaya salad with dried shrimp, peanuts, and lime dressing',
@@ -101,7 +112,9 @@ const seedData: SeedRestaurant[] = [
     logoUrl: 'https://images.unsplash.com/photo-1583778176476-4a8b02a64c01?w=200&auto=format&fit=crop',
     tags: ['Hot Pot', 'Sharing', 'Premium'],
     isOpen: true,
-    dishes: [
+    status: 'active',
+    orderWindow: { openHour: 17, closeHour: 10, deliveryHour: 12 },
+    menuItems: [
       {
         name: 'MK Sukiyaki Set (2 pax)',
         description: 'Premium hot pot set with broth, mixed vegetables, tofu, and dipping sauce',
@@ -147,7 +160,9 @@ const seedData: SeedRestaurant[] = [
     logoUrl: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=200&auto=format&fit=crop',
     tags: ['Street Food', 'Michelin', 'Seafood'],
     isOpen: true,
-    dishes: [
+    status: 'active',
+    orderWindow: { openHour: 17, closeHour: 10, deliveryHour: 12 },
+    menuItems: [
       {
         name: 'Crab Omelette (Kai Jeaw Poo)',
         description: 'Crispy jumbo omelette packed with fresh crab meat — the signature dish',
@@ -193,7 +208,9 @@ const seedData: SeedRestaurant[] = [
     logoUrl: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=200&auto=format&fit=crop',
     tags: ['Pizza', 'Western', 'Family'],
     isOpen: false,
-    dishes: [
+    status: 'active',
+    orderWindow: { openHour: 17, closeHour: 10, deliveryHour: 12 },
+    menuItems: [
       {
         name: 'Pepperoni Classic',
         description: 'Tomato sauce, mozzarella, and generous pepperoni on thin crust (10")',
@@ -238,20 +255,34 @@ async function seed() {
   }
   await Promise.all([
     safeDrop('restaurants'),
-    safeDrop('dishes'),
+    safeDrop('menuitems'),
   ])
-  console.log('Cleared restaurants and dishes (with indexes)')
+  console.log('Cleared restaurants and menu items (with indexes)')
 
-  let totalDishes = 0
-  for (const { dishes, ...restaurantData } of seedData) {
-    const restaurant = await Restaurant.create(restaurantData)
-    const dishesWithFk = dishes.map((d) => ({ ...d, restaurantId: restaurant._id }))
-    await Dish.insertMany(dishesWithFk)
-    totalDishes += dishes.length
-    console.log(`  · ${restaurant.name} (${dishes.length} dishes)`)
+  // Ensure a seed admin user exists to satisfy the required ownerUserId constraint.
+  // Upsert by a stable lineUserId so re-runs don't create duplicates.
+  const SEED_ADMIN_LINE_ID = 'seed_admin'
+  let seedAdmin = await User.findOne({ lineUserId: SEED_ADMIN_LINE_ID })
+  if (!seedAdmin) {
+    seedAdmin = await User.create({
+      lineUserId: SEED_ADMIN_LINE_ID,
+      displayName: 'Seed Admin',
+      role: 'admin',
+      emailVerified: false,
+    })
+    console.log('  · Created seed admin user')
   }
 
-  console.log(`Seeded ${seedData.length} restaurants and ${totalDishes} dishes`)
+  let totalMenuItems = 0
+  for (const { menuItems, ...restaurantData } of seedData) {
+    const restaurant = await Restaurant.create({ ...restaurantData, ownerUserId: seedAdmin._id })
+    const menuItemsWithFk = menuItems.map((m) => ({ ...m, restaurantId: restaurant._id }))
+    await MenuItem.insertMany(menuItemsWithFk)
+    totalMenuItems += menuItems.length
+    console.log(`  · ${restaurant.name} (${menuItems.length} menu items)`)
+  }
+
+  console.log(`Seeded ${seedData.length} restaurants and ${totalMenuItems} menu items`)
 
   await mongoose.disconnect()
   console.log('Done')

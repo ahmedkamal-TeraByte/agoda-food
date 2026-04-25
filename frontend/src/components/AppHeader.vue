@@ -5,10 +5,13 @@ import { useUserStore } from '../stores/user'
 import { useRouter } from 'vue-router'
 import { setAuthToken } from '../services/api'
 import { isInLineClient, liffLogout } from '../lib/liff'
+import { computed } from 'vue'
 
 const cart = useCartStore()
 const user = useUserStore()
 const router = useRouter()
+
+const isMerchant = computed(() => user.isMerchant)
 
 const menuOpen = ref(false)
 const menuRoot = ref<HTMLElement | null>(null)
@@ -55,7 +58,7 @@ onBeforeUnmount(() => document.removeEventListener('click', handleDocClick))
   <header class="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
     <div class="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
       <button @click="router.push('/')" class="flex items-center gap-2">
-        <span class="text-2xl">🍱</span>
+        <img src="/agoda-food-log.png" alt="Agoda Food" class="w-8 h-8 object-contain" />
         <span class="font-bold text-gray-900 text-lg">Agoda Food</span>
       </button>
 
@@ -96,6 +99,12 @@ onBeforeUnmount(() => document.removeEventListener('click', handleDocClick))
             </button>
             <button @click="go('/orders')" class="w-full text-left px-4 py-2 hover:bg-gray-50">
               My orders
+            </button>
+            <button v-if="isMerchant" @click="go('/merchant')" class="w-full text-left px-4 py-2 hover:bg-gray-50 text-brand-600 font-medium">
+              Merchant dashboard
+            </button>
+            <button v-else @click="go('/restaurants/apply')" class="w-full text-left px-4 py-2 hover:bg-gray-50 text-gray-600">
+              Open a restaurant
             </button>
             <button
               @click="logout"

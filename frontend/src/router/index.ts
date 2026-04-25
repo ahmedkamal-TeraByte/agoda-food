@@ -3,12 +3,17 @@ import { useUserStore } from '../stores/user'
 import HomePage from '../pages/HomePage.vue'
 import RestaurantPage from '../pages/RestaurantPage.vue'
 import CartPage from '../pages/CartPage.vue'
+import CheckoutPage from '../pages/CheckoutPage.vue'
 import OrderSuccessPage from '../pages/OrderSuccessPage.vue'
 import LoginPage from '../pages/LoginPage.vue'
 import LineCallbackPage from '../pages/LineCallbackPage.vue'
 import OnboardingPage from '../pages/OnboardingPage.vue'
 import ProfilePage from '../pages/ProfilePage.vue'
 import OrdersPage from '../pages/OrdersPage.vue'
+import RestaurantApplyPage from '../pages/RestaurantApplyPage.vue'
+import MerchantOverview from '../pages/MerchantOverview.vue'
+import MerchantMenu from '../pages/MerchantMenu.vue'
+import MerchantOrders from '../pages/MerchantOrders.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -17,30 +22,33 @@ export const router = createRouter({
     { path: '/', component: HomePage },
     { path: '/restaurant/:id', component: RestaurantPage },
     { path: '/cart', component: CartPage },
-    { path: '/order/:id', component: OrderSuccessPage },
+    { path: '/checkout', component: CheckoutPage, meta: { requiresAuth: true } },
+    { path: '/order/:id', component: OrderSuccessPage, meta: { requiresAuth: true } },
     { path: '/login', component: LoginPage },
     { path: '/auth/line/callback', component: LineCallbackPage },
     { path: '/onboarding', component: OnboardingPage },
     { path: '/profile', component: ProfilePage },
     { path: '/orders', component: OrdersPage },
+    { path: '/restaurants/apply', component: RestaurantApplyPage, meta: { requiresAuth: true } },
+    { path: '/merchant', component: MerchantOverview, meta: { requiresMerchant: true } },
+    { path: '/merchant/menu', component: MerchantMenu, meta: { requiresMerchant: true } },
+    { path: '/merchant/orders', component: MerchantOrders, meta: { requiresMerchant: true } },
   ],
 })
 
-// Routes where an incomplete profile blocks access.
-const ONBOARDING_GATED = ['/cart', '/profile', '/orders']
-
 router.beforeEach((to) => {
-  // Pinia is initialised before the router so we can safely call useUserStore here.
   const user = useUserStore()
 
-  // Logged-in users with incomplete profiles get redirected to onboarding
-  // when trying to reach gated routes.
-  if (
-    user.isLoggedIn &&
-    user.needsOnboarding &&
-    ONBOARDING_GATED.includes(to.path) &&
-    to.path !== '/onboarding'
-  ) {
-    return { path: '/onboarding', query: { redirect: to.fullPath } }
+  if (to.meta.requiresMerchant) {
+    if (!user.isLoggedIn) {
+      return { path: '/login', query: { redirect: to.fullPath } }
+    }
+    if (!user.isMerchant) {
+      return { path: '/' }
+    }
+  }
+
+  if (to.meta.requiresAuth && !user.isLoggedIn) {
+    return { path: '/login', query: { redirect: to.fullPath } }
   }
 })

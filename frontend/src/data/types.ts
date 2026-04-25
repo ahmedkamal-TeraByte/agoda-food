@@ -1,16 +1,21 @@
-// Keep in sync with backend/src/models/Dish.ts DISH_TAGS
-export const DISH_TAGS = ['Popular', 'Vegetarian', 'Vegan', 'Spicy', 'GlutenFree'] as const
-export type DishTag = (typeof DISH_TAGS)[number]
+export const MENU_ITEM_TAGS = ['Popular', 'Vegetarian', 'Vegan', 'Spicy', 'GlutenFree'] as const
+export type MenuItemTag = (typeof MENU_ITEM_TAGS)[number]
 
-export interface Dish {
+export interface OrderWindow {
+  openHour: number
+  closeHour: number
+  deliveryHour: number
+}
+
+export interface MenuItem {
   id: string
   restaurantId: string
   name: string
   description: string
-  price: number // THB
-  imageUrl: string
+  price: number
+  imageUrl?: string
   category: string
-  tags: DishTag[]
+  tags: MenuItemTag[]
   isAvailable?: boolean
 }
 
@@ -20,22 +25,25 @@ export interface Restaurant {
   cuisine: string
   rating: number
   reviewCount: number
-  deliveryTime: string // e.g. "15–25 min"
-  deliveryFee: number // THB, 0 = free
-  minOrder: number // THB
+  deliveryTime: string
+  deliveryFee: number
+  minOrder: number
   imageUrl: string
   logoUrl: string
   tags: string[]
   isOpen: boolean
+  status?: 'draft' | 'active' | 'suspended'
+  ownerUserId: string
+  orderWindow?: OrderWindow
+  referral?: { name: string; email: string; verifiedAt?: string }
 }
 
-// A restaurant detail fetched with its menu — used by RestaurantPage.
 export interface RestaurantWithMenu extends Restaurant {
-  menu: Dish[]
+  menu: MenuItem[]
 }
 
 export interface CartItem {
-  dish: Dish
+  menuItem: MenuItem
   restaurantId: string
   restaurantName: string
   quantity: number
@@ -43,10 +51,10 @@ export interface CartItem {
 }
 
 export interface OrderItem {
-  dishId: string
+  menuItemId: string
   name: string
   price: number
-  imageUrl: string
+  imageUrl?: string
   quantity: number
   note: string
 }
@@ -59,9 +67,32 @@ export interface User {
   pictureUrl?: string
   deliveryLocation?: string
   needsOnboarding?: boolean
+  role?: 'customer' | 'merchant' | 'admin'
+  emailVerified?: boolean
 }
 
-export type OrderStatus = 'pending' | 'confirmed' | 'preparing' | 'delivered' | 'cancelled'
+export type OrderStatus =
+  | 'awaiting_payment'
+  | 'pending'
+  | 'confirmed'
+  | 'preparing'
+  | 'delivered'
+  | 'cancelled'
+
+export type PaymentStatus = 'unpaid' | 'paid' | 'refunded'
+
+export type PromptPayStatus = 'pending' | 'paid' | 'expired' | 'failed'
+
+export interface PromptPayQR {
+  paymentIntentId: string
+  qrImageUrl: string
+  qrSvgUrl: string
+  qrData: string
+  expiresAt: string   // ISO string from JSON
+  amount: number      // satang (THB × 100)
+  currency: 'thb'
+  status?: PromptPayStatus  // absent on create response, present on GET /payment
+}
 
 export interface Order {
   id: string
@@ -73,5 +104,7 @@ export interface Order {
   deliveryFee: number
   total: number
   status: OrderStatus
+  paymentStatus?: PaymentStatus
+  serviceDate?: string
   createdAt: string
 }

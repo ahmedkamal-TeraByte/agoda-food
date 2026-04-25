@@ -9,6 +9,9 @@ import restaurantRoutes from './routes/restaurants'
 import orderRoutes from './routes/orders'
 import authRoutes from './routes/auth'
 import userRoutes from './routes/users'
+import emailRoutes from './routes/email'
+import merchantRoutes from './routes/merchant'
+import stripeWebhookRoutes from './routes/stripeWebhook'
 
 const app = express()
 const PORT = process.env.PORT ?? 3000
@@ -24,12 +27,19 @@ if (!IS_PROD) {
     }),
   )
 }
+
+// Stripe webhook MUST be mounted before express.json() so the raw body is
+// preserved for signature verification. Placing it after would break HMAC checks.
+app.use('/api/stripe', stripeWebhookRoutes)
+
 app.use(express.json())
 
 app.use('/api/auth', authRoutes)
+app.use('/api/auth/email', emailRoutes)
 app.use('/api/users', userRoutes)
 app.use('/api/restaurants', restaurantRoutes)
 app.use('/api/orders', orderRoutes)
+app.use('/api/merchant', merchantRoutes)
 
 app.get('/health', (_req, res) => {
   res.json({

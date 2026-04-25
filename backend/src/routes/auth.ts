@@ -26,13 +26,21 @@ async function resolveLineUser(claims: LineClaims): Promise<AuthResponse> {
       displayName: claims.name,
       pictureUrl: claims.picture,
       email: claims.email,
+      // LINE has already verified the email address
+      emailVerified: !!claims.email,
     })
   } else {
-    // Backfill picture only if the user never had one; never clobber edited fields.
+    let dirty = false
     if (!user.pictureUrl && claims.picture) {
       user.pictureUrl = claims.picture
-      await user.save()
+      dirty = true
     }
+    // Backfill emailVerified if LINE supplied an email this session
+    if (claims.email && !user.emailVerified) {
+      user.emailVerified = true
+      dirty = true
+    }
+    if (dirty) await user.save()
   }
 
   const needsOnboarding = !user.email || !user.phone

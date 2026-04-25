@@ -1,17 +1,20 @@
 import { Schema, model, Document, Types } from 'mongoose'
 
-export type OrderStatus = 'pending' | 'confirmed' | 'preparing' | 'delivered' | 'cancelled'
+export type OrderStatus =
+  | 'awaiting_payment'
+  | 'pending'
+  | 'confirmed'
+  | 'preparing'
+  | 'delivered'
+  | 'cancelled'
 
-/**
- * OrderItem snapshots dish data at order time. The dishId reference is kept for
- * analytics (e.g. "top-selling dishes"), but name/price/imageUrl are frozen so
- * the order stays historically accurate even if the dish is later edited or deleted.
- */
+export type PaymentStatus = 'unpaid' | 'paid' | 'refunded'
+
 export interface IOrderItem {
-  dishId: Types.ObjectId
+  menuItemId: Types.ObjectId
   name: string
   price: number
-  imageUrl: string
+  imageUrl?: string
   quantity: number
   note: string
 }
@@ -25,16 +28,18 @@ export interface IOrder extends Document {
   deliveryFee: number
   total: number
   status: OrderStatus
+  paymentStatus: PaymentStatus
+  serviceDate?: Date
   createdAt: Date
   updatedAt: Date
 }
 
 const OrderItemSchema = new Schema<IOrderItem>(
   {
-    dishId: { type: Schema.Types.ObjectId, ref: 'Dish', required: true },
+    menuItemId: { type: Schema.Types.ObjectId, ref: 'MenuItem', required: true },
     name: { type: String, required: true },
     price: { type: Number, required: true, min: 0 },
-    imageUrl: { type: String, required: true },
+    imageUrl: { type: String },
     quantity: { type: Number, required: true, min: 1 },
     note: { type: String, default: '' },
   },
@@ -43,16 +48,8 @@ const OrderItemSchema = new Schema<IOrderItem>(
 
 const OrderSchema = new Schema<IOrder>(
   {
-    userId: {
-      type: Schema.Types.ObjectId,
-      ref: 'User',
-      required: true,
-    },
-    restaurantId: {
-      type: Schema.Types.ObjectId,
-      ref: 'Restaurant',
-      required: true,
-    },
+    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    restaurantId: { type: Schema.Types.ObjectId, ref: 'Restaurant', required: true },
     restaurantName: { type: String, required: true },
     items: {
       type: [OrderItemSchema],
@@ -67,16 +64,21 @@ const OrderSchema = new Schema<IOrder>(
     total: { type: Number, required: true, min: 0 },
     status: {
       type: String,
-      enum: ['pending', 'confirmed', 'preparing', 'delivered', 'cancelled'],
-      default: 'pending',
+      enum: ['awaiting_payment', 'pending', 'confirmed', 'preparing', 'delivered', 'cancelled'],
+      default: 'awaiting_payment',
     },
+    paymentStatus: {
+      type: String,
+      enum: ['unpaid', 'paid', 'refunded'],
+      default: 'unpaid',
+    },
+    serviceDate: { type: Date },
   },
   { timestamps: true },
 )
 
-// Common operational queries
 OrderSchema.index({ userId: 1, createdAt: -1 })
-OrderSchema.index({ restaurantId: 1, status: 1, createdAt: -1 })
+OrderSchema.index({ restaurantId: 1, serviceDate: 1, status: 1 })
 OrderSchema.index({ createdAt: -1 })
 
 export const Order = model<IOrder>('Order', OrderSchema)

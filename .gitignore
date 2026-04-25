@@ -4,6 +4,9 @@ dist
 .env.local
 .DS_Store
 *.local
+.agents
+.claude
+skills-lock.json
 
 # Backend compiled output
 backend/dist

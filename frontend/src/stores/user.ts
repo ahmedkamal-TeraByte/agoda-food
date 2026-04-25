@@ -31,6 +31,10 @@ export const useUserStore = defineStore('user', () => {
     () => isLoggedIn.value && (!user.value?.email || !user.value?.phone),
   )
 
+  const emailVerified = computed(() => user.value?.emailVerified ?? false)
+
+  const isMerchant = computed(() => user.value?.role === 'merchant' || user.value?.role === 'admin')
+
   function setSession(nextUser: User, nextToken: string) {
     user.value = nextUser
     token.value = nextToken
@@ -55,6 +59,8 @@ export const useUserStore = defineStore('user', () => {
     token,
     isLoggedIn,
     needsOnboarding,
+    emailVerified,
+    isMerchant,
     setSession,
     updateUser,
     clear,

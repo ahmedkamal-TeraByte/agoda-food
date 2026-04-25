@@ -23,30 +23,34 @@ onMounted(() => {
   }
 })
 
+function getRedirect() {
+  return typeof route.query.redirect === 'string' ? route.query.redirect : '/'
+}
+
 async function save() {
-  if (!form.email.trim() || !form.phone.trim()) {
-    error.value = 'Email and phone are required.'
-    return
-  }
   saving.value = true
   error.value = null
   try {
-    await updateMe({
-      email: form.email.trim(),
-      phone: form.phone.trim(),
-      deliveryLocation: form.deliveryLocation.trim() || undefined,
-    })
-    // Re-fetch so needsOnboarding is recomputed from the latest server state.
+    const payload: Record<string, string> = {}
+    if (form.email.trim()) payload.email = form.email.trim()
+    if (form.phone.trim()) payload.phone = form.phone.trim()
+    if (form.deliveryLocation.trim()) payload.deliveryLocation = form.deliveryLocation.trim()
+
+    if (Object.keys(payload).length > 0) {
+      await updateMe(payload)
+    }
     const me = await fetchMe()
     userStore.updateUser(me)
-
-    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
-    router.replace(redirect)
+    router.replace(getRedirect())
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Failed to save'
   } finally {
     saving.value = false
   }
+}
+
+function skip() {
+  router.replace(getRedirect())
 }
 </script>
 
@@ -63,7 +67,9 @@ async function save() {
       <div class="text-center mb-8">
         <div class="text-5xl mb-3">👤</div>
         <h1 class="text-2xl font-bold text-gray-900 mb-1">Complete your profile</h1>
-        <p class="text-gray-500 text-sm">We need your email and phone to deliver your lunch.</p>
+        <p class="text-gray-500 text-sm">
+          Add your details to make ordering faster. All fields are optional — you can fill them in later.
+        </p>
       </div>
 
       <form
@@ -84,22 +90,21 @@ async function save() {
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1.5">Email *</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
           <input
             v-model="form.email"
             type="email"
-            required
             placeholder="you@agoda.com"
             class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300"
           />
+          <p class="text-xs text-gray-400 mt-1">Required to place orders (you can verify later)</p>
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1.5">Phone *</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1.5">Phone</label>
           <input
             v-model="form.phone"
             type="tel"
-            required
             placeholder="+66 81 234 5678"
             class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300"
           />
@@ -124,7 +129,15 @@ async function save() {
           :disabled="saving"
           class="w-full bg-brand-500 disabled:opacity-60 text-white rounded-xl py-3 font-semibold"
         >
-          {{ saving ? 'Saving…' : 'Continue' }}
+          {{ saving ? 'Saving…' : 'Save & continue' }}
+        </button>
+
+        <button
+          type="button"
+          @click="skip"
+          class="w-full text-gray-400 text-sm py-2 hover:text-gray-600 transition-colors"
+        >
+          Skip for now
         </button>
       </form>
     </div>

@@ -31,6 +31,18 @@ function shortId(id: string) {
   return id.slice(-6).toUpperCase()
 }
 
+// If we landed on /orders by clicking "Back to orders" from an order page,
+// going back would loop the user back to that order. Detect that case and
+// route them home instead.
+function goBack() {
+  const prev = router.options.history.state?.back
+  if (typeof prev === 'string' && prev.startsWith('/order/')) {
+    router.push('/')
+  } else {
+    router.back()
+  }
+}
+
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString('en-GB', {
     day: '2-digit',
@@ -41,6 +53,7 @@ function formatDate(iso: string) {
 }
 
 const STATUS_STYLES: Record<Order['status'], string> = {
+  awaiting_payment: 'bg-amber-100 text-amber-700',
   pending: 'bg-yellow-100 text-yellow-800',
   confirmed: 'bg-blue-100 text-blue-800',
   preparing: 'bg-purple-100 text-purple-800',
@@ -55,7 +68,7 @@ const STATUS_STYLES: Record<Order['status'], string> = {
 
     <div class="max-w-2xl mx-auto px-4 py-6">
       <div class="flex items-center gap-3 mb-6">
-        <button @click="router.back()" class="text-brand-500 text-sm">← Back</button>
+        <button @click="goBack" class="text-brand-500 text-sm">← Back</button>
         <h1 class="font-bold text-gray-900 text-xl">My orders</h1>
       </div>
 
@@ -101,7 +114,10 @@ const STATUS_STYLES: Record<Order['status'], string> = {
           <p class="text-xs text-gray-400 mb-2 font-mono">#{{ shortId(order.id) }} · {{ formatDate(order.createdAt) }}</p>
           <div class="flex items-center justify-between text-sm">
             <span class="text-gray-500">{{ order.items.length }} item{{ order.items.length === 1 ? '' : 's' }}</span>
-            <span class="font-bold text-gray-900">฿{{ order.total }}</span>
+            <span v-if="order.status === 'awaiting_payment'" class="font-semibold text-amber-600">
+              Pay ฿{{ order.total }} →
+            </span>
+            <span v-else class="font-bold text-gray-900">฿{{ order.total }}</span>
           </div>
         </button>
       </div>

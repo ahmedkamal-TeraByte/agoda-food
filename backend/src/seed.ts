@@ -275,7 +275,12 @@ async function seed() {
 
   let totalMenuItems = 0
   for (const { menuItems, ...restaurantData } of seedData) {
-    const restaurant = await Restaurant.create({ ...restaurantData, ownerUserId: seedAdmin._id })
+    const categories = [...new Set(menuItems.map((m) => m.category).filter(Boolean))]
+    const restaurant = await Restaurant.create({
+      ...restaurantData,
+      categories,
+      ownerUserId: seedAdmin._id,
+    })
     const menuItemsWithFk = menuItems.map((m) => ({ ...m, restaurantId: restaurant._id }))
     await MenuItem.insertMany(menuItemsWithFk)
     totalMenuItems += menuItems.length

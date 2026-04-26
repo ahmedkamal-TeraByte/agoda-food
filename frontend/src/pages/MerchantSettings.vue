@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { ref, onMounted, reactive } from 'vue'
-import { useRouter } from 'vue-router'
 import AppHeader from '../components/AppHeader.vue'
-import { fetchMerchantRestaurant, updateMerchantRestaurant } from '../services/api'
+import MerchantTabs from '../components/MerchantTabs.vue'
+import ConfirmModal from '../components/ConfirmModal.vue'
+import {
+  fetchMerchantRestaurant,
+  updateMerchantRestaurant,
+  fetchMerchantPromptPayQr,
+  uploadMerchantPromptPayQr,
+  deleteMerchantPromptPayQr,
+} from '../services/api'
 import type { Restaurant } from '../data/types'
-
-const router = useRouter()
 
 const restaurant = ref<Restaurant | null>(null)
 const loading = ref(true)
@@ -20,11 +25,21 @@ const form = reactive({
   deliveryTime: '',
   deliveryFee: 0,
   minOrder: 0,
-  isOpen: true,
   openHour: 17,
   closeHour: 10,
   deliveryHour: 12,
 })
+
+// --- PromptPay QR onboarding ---
+const qrImageUrl = ref<string | null>(null)
+const qrConfigured = ref(false)
+const qrUploading = ref(false)
+const qrError = ref<string | null>(null)
+const qrInputRef = ref<HTMLInputElement | null>(null)
+
+const showRemoveQrModal = ref(false)
+const removingQr = ref(false)
+const removeQrError = ref<string | null>(null)
 
 onMounted(async () => {
   try {
@@ -35,16 +50,67 @@ onMounted(async () => {
     form.deliveryTime = r.deliveryTime
     form.deliveryFee = r.deliveryFee
     form.minOrder = r.minOrder
-    form.isOpen = r.isOpen
     form.openHour = r.orderWindow?.openHour ?? 17
     form.closeHour = r.orderWindow?.closeHour ?? 10
     form.deliveryHour = r.orderWindow?.deliveryHour ?? 12
+
+    const qr = await fetchMerchantPromptPayQr()
+    qrConfigured.value = qr.configured
+    qrImageUrl.value = qr.qrImageUrl ?? null
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Failed to load restaurant'
   } finally {
     loading.value = false
   }
 })
+
+function pickQrFile() {
+  qrInputRef.value?.click()
+}
+
+async function onQrFileChosen(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  qrError.value = null
+  qrUploading.value = true
+  try {
+    const result = await uploadMerchantPromptPayQr(file)
+    qrConfigured.value = result.configured
+    qrImageUrl.value = result.qrImageUrl ?? null
+  } catch (e) {
+    qrError.value = e instanceof Error ? e.message : 'Could not read that QR code'
+  } finally {
+    qrUploading.value = false
+    input.value = ''
+  }
+}
+
+function requestRemoveQr() {
+  removeQrError.value = null
+  showRemoveQrModal.value = true
+}
+
+function dismissRemoveQrModal() {
+  if (removingQr.value) return
+  showRemoveQrModal.value = false
+  removeQrError.value = null
+}
+
+async function confirmRemoveQr() {
+  removingQr.value = true
+  removeQrError.value = null
+  try {
+    const result = await deleteMerchantPromptPayQr()
+    qrConfigured.value = result.configured
+    qrImageUrl.value = null
+    showRemoveQrModal.value = false
+  } catch (e) {
+    removeQrError.value = e instanceof Error ? e.message : 'Could not remove QR'
+  } finally {
+    removingQr.value = false
+  }
+}
 
 async function save() {
   saving.value = true
@@ -57,7 +123,6 @@ async function save() {
       deliveryTime: form.deliveryTime,
       deliveryFee: form.deliveryFee,
       minOrder: form.minOrder,
-      isOpen: form.isOpen,
       orderWindow: {
         openHour: form.openHour,
         closeHour: form.closeHour,
@@ -80,12 +145,7 @@ async function save() {
     <AppHeader />
 
     <div class="max-w-2xl mx-auto px-4 py-6">
-      <!-- Nav tabs -->
-      <div class="flex gap-2 mb-6 border-b border-gray-200">
-        <button class="pb-2 px-1 text-sm font-semibold text-brand-500 border-b-2 border-brand-500">Overview</button>
-        <button @click="router.push('/merchant/menu')" class="pb-2 px-1 text-sm text-gray-500 hover:text-gray-700">Menu</button>
-        <button @click="router.push('/merchant/orders')" class="pb-2 px-1 text-sm text-gray-500 hover:text-gray-700">Orders</button>
-      </div>
+      <MerchantTabs />
 
       <div v-if="loading" class="space-y-4">
         <div class="h-8 bg-gray-200 rounded animate-pulse w-48" />
@@ -140,26 +200,6 @@ async function save() {
             </div>
           </div>
 
-          <!-- Accept orders toggle -->
-          <div class="flex items-center justify-between py-2 border-t border-gray-100">
-            <div>
-              <p class="font-medium text-gray-800 text-sm">Accept orders</p>
-              <p class="text-xs text-gray-400">Customers can add items to cart when this is on</p>
-            </div>
-            <button
-              type="button"
-              @click="form.isOpen = !form.isOpen"
-              class="relative inline-flex h-6 w-11 rounded-full transition-colors focus:outline-none"
-              :class="form.isOpen ? 'bg-brand-500' : 'bg-gray-200'"
-            >
-              <span
-                class="inline-block w-5 h-5 rounded-full bg-white shadow transform transition-transform mt-0.5"
-                :class="form.isOpen ? 'translate-x-5' : 'translate-x-1'"
-              />
-            </button>
-          </div>
-
-          <!-- Order window -->
           <div class="border-t border-gray-100 pt-4">
             <h3 class="font-semibold text-gray-800 mb-1 text-sm">Order window (Asia/Bangkok)</h3>
             <p class="text-xs text-gray-400 mb-3">
@@ -188,7 +228,83 @@ async function save() {
             {{ saving ? 'Saving…' : 'Save changes' }}
           </button>
         </form>
+
+        <!-- PromptPay QR onboarding -->
+        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mt-5">
+          <div class="flex items-start justify-between mb-2">
+            <div>
+              <h2 class="font-semibold text-gray-800">PromptPay QR</h2>
+              <p class="text-xs text-gray-500 mt-0.5">
+                Customers scan this QR with their banking app to pay you directly.
+              </p>
+            </div>
+            <span
+              class="text-xs font-medium px-2.5 py-1 rounded-full shrink-0"
+              :class="qrConfigured ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'"
+            >
+              {{ qrConfigured ? 'Configured' : 'Not set' }}
+            </span>
+          </div>
+
+          <div v-if="!qrConfigured" class="mt-4 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl px-3 py-2">
+            ⚠️ Customers can't place orders until you upload your PromptPay QR.
+          </div>
+
+          <div v-if="qrConfigured && qrImageUrl" class="mt-4 flex flex-col items-center bg-gray-50 rounded-xl p-4 border border-gray-100">
+            <img :src="qrImageUrl" alt="Your PromptPay QR" class="w-40 h-40 rounded-lg" />
+            <p class="text-xs text-gray-400 mt-2">Preview — customers see this on every order page.</p>
+          </div>
+
+          <div v-if="qrError" class="mt-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-3 py-2">
+            ⚠️ {{ qrError }}
+          </div>
+
+          <input
+            ref="qrInputRef"
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+            class="hidden"
+            @change="onQrFileChosen"
+          />
+
+          <div class="mt-4 flex flex-col sm:flex-row gap-2">
+            <button
+              type="button"
+              @click="pickQrFile"
+              :disabled="qrUploading"
+              class="flex-1 bg-brand-500 disabled:opacity-60 text-white rounded-xl py-2.5 font-semibold text-sm"
+            >
+              {{ qrUploading ? 'Reading QR…' : qrConfigured ? 'Replace QR' : 'Upload PromptPay QR' }}
+            </button>
+            <button
+              v-if="qrConfigured"
+              type="button"
+              @click="requestRemoveQr"
+              class="flex-1 sm:flex-none border border-red-200 text-red-600 rounded-xl px-4 py-2.5 font-medium text-sm hover:bg-red-50"
+            >
+              Remove
+            </button>
+          </div>
+
+          <p class="text-xs text-gray-400 mt-3 leading-relaxed">
+            Open your bank app → PromptPay → save your QR as an image, then upload it here. We
+            extract just the PromptPay info and re-render a fresh QR for each order.
+          </p>
+        </div>
       </div>
     </div>
+
+    <ConfirmModal
+      :open="showRemoveQrModal"
+      title="Remove your PromptPay QR?"
+      message="Customers will not be able to place new orders until you upload a new one."
+      confirm-label="Yes, remove QR"
+      cancel-label="Keep QR"
+      tone="danger"
+      :loading="removingQr"
+      :error-message="removeQrError"
+      @confirm="confirmRemoveQr"
+      @cancel="dismissRemoveQrModal"
+    />
   </div>
 </template>

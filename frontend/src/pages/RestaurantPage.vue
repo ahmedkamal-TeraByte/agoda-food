@@ -54,13 +54,31 @@ onMounted(async () => {
   }
 })
 
-const categories = computed(() => {
+const UNCATEGORIZED = '__uncategorized__'
+
+const categories = computed<string[]>(() => {
   if (!restaurant.value) return []
-  return [...new Set(restaurant.value.menu.map((mi) => mi.category))]
+  const named = new Set<string>()
+  let hasUncategorized = false
+  for (const mi of restaurant.value.menu) {
+    if (mi.category) named.add(mi.category)
+    else hasUncategorized = true
+  }
+  const result = [...named]
+  if (hasUncategorized) result.push(UNCATEGORIZED)
+  return result
 })
 
+function categoryLabel(c: string): string {
+  return c === UNCATEGORIZED ? 'Other' : c
+}
+
 function itemsByCategory(category: string) {
-  return restaurant.value?.menu.filter((mi) => mi.category === category) ?? []
+  if (!restaurant.value) return []
+  if (category === UNCATEGORIZED) {
+    return restaurant.value.menu.filter((mi) => !mi.category)
+  }
+  return restaurant.value.menu.filter((mi) => mi.category === category)
 }
 
 const orderWindow = computed(() => restaurant.value?.orderWindow)
@@ -165,7 +183,7 @@ const { isOpen: windowIsOpen, label: windowLabel, deliveryTimeLabel } = useOrder
       <section v-for="category in categories" :key="category">
         <h2 class="font-bold text-gray-900 text-base mb-3 flex items-center gap-2">
           <span class="w-1 h-5 bg-brand-500 rounded-full inline-block"></span>
-          {{ category }}
+          {{ categoryLabel(category) }}
         </h2>
         <div class="grid grid-cols-2 gap-3">
           <MenuItemCard

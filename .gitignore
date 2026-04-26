@@ -13,3 +13,6 @@ backend/dist
 
 # Frontend build output
 frontend/dist
+
+# Local file uploads (used as a fallback when R2 credentials are not set)
+.uploads

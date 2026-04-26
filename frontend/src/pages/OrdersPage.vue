@@ -54,11 +54,22 @@ function formatDate(iso: string) {
 
 const STATUS_STYLES: Record<Order['status'], string> = {
   awaiting_payment: 'bg-amber-100 text-amber-700',
+  pending_verification: 'bg-blue-100 text-blue-700',
   pending: 'bg-yellow-100 text-yellow-800',
   confirmed: 'bg-blue-100 text-blue-800',
   preparing: 'bg-purple-100 text-purple-800',
   delivered: 'bg-green-100 text-green-800',
   cancelled: 'bg-gray-100 text-gray-600',
+}
+
+const STATUS_LABELS: Record<Order['status'], string> = {
+  awaiting_payment: 'Awaiting payment',
+  pending_verification: 'Verifying payment',
+  pending: 'Pending',
+  confirmed: 'Confirmed',
+  preparing: 'Preparing',
+  delivered: 'Delivered',
+  cancelled: 'Cancelled',
 }
 </script>
 
@@ -108,7 +119,7 @@ const STATUS_STYLES: Record<Order['status'], string> = {
               class="text-xs font-medium px-2 py-0.5 rounded-full"
               :class="STATUS_STYLES[order.status]"
             >
-              {{ order.status }}
+              {{ STATUS_LABELS[order.status] }}
             </span>
           </div>
           <p class="text-xs text-gray-400 mb-2 font-mono">#{{ shortId(order.id) }} · {{ formatDate(order.createdAt) }}</p>

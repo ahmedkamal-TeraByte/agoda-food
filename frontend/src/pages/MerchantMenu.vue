@@ -1,17 +1,19 @@
 <script setup lang="ts">
-import { ref, onMounted, reactive } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, reactive } from 'vue'
 import AppHeader from '../components/AppHeader.vue'
+import MerchantTabs from '../components/MerchantTabs.vue'
+import ConfirmModal from '../components/ConfirmModal.vue'
 import {
   fetchMerchantMenuItems,
+  fetchMerchantCategories,
   createMerchantMenuItem,
   updateMerchantMenuItem,
   deleteMerchantMenuItem,
 } from '../services/api'
 import type { MenuItem } from '../data/types'
 
-const router = useRouter()
 const menuItems = ref<MenuItem[]>([])
+const categories = ref<string[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
 
@@ -30,7 +32,16 @@ const form = reactive({
 const formError = ref<string | null>(null)
 const saving = ref(false)
 
-onMounted(loadMenuItems)
+const pendingDelete = ref<MenuItem | null>(null)
+const deleting = ref(false)
+const deleteError = ref<string | null>(null)
+const deleteTitle = computed(() =>
+  pendingDelete.value ? `Delete "${pendingDelete.value.name}"?` : 'Delete dish?',
+)
+
+onMounted(async () => {
+  await Promise.all([loadMenuItems(), loadCategories()])
+})
 
 async function loadMenuItems() {
   loading.value = true
@@ -40,6 +51,14 @@ async function loadMenuItems() {
     error.value = e instanceof Error ? e.message : 'Failed to load menu items'
   } finally {
     loading.value = false
+  }
+}
+
+async function loadCategories() {
+  try {
+    categories.value = await fetchMerchantCategories()
+  } catch {
+    categories.value = []
   }
 }
 
@@ -56,7 +75,7 @@ function openEdit(menuItem: MenuItem) {
     description: menuItem.description,
     price: menuItem.price,
     imageUrl: menuItem.imageUrl ?? '',
-    category: menuItem.category,
+    category: menuItem.category ?? '',
     isAvailable: menuItem.isAvailable ?? true,
   })
   editingMenuItem.value = menuItem
@@ -65,17 +84,22 @@ function openEdit(menuItem: MenuItem) {
 }
 
 async function saveForm() {
-  if (!form.name.trim() || !form.description.trim() || !form.category.trim()) {
-    formError.value = 'Name, description and category are required'
+  if (!form.name.trim() || !form.description.trim()) {
+    formError.value = 'Name and description are required'
     return
   }
   saving.value = true
   formError.value = null
   try {
+    const payload = {
+      ...form,
+      imageUrl: form.imageUrl || undefined,
+      category: form.category || '',
+    }
     if (mode.value === 'add') {
-      await createMerchantMenuItem({ ...form, imageUrl: form.imageUrl || undefined })
+      await createMerchantMenuItem(payload)
     } else if (editingMenuItem.value) {
-      await updateMerchantMenuItem(editingMenuItem.value.id, { ...form, imageUrl: form.imageUrl || undefined })
+      await updateMerchantMenuItem(editingMenuItem.value.id, payload)
     }
     await loadMenuItems()
     mode.value = 'list'
@@ -86,16 +110,32 @@ async function saveForm() {
   }
 }
 
-async function removeMenuItem(menuItem: MenuItem) {
-  if (!confirm(`Delete "${menuItem.name}"?`)) return
-  try {
-    await deleteMerchantMenuItem(menuItem.id)
-    await loadMenuItems()
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : 'Failed to delete'
-  }
+function requestDelete(menuItem: MenuItem) {
+  deleteError.value = null
+  pendingDelete.value = menuItem
 }
 
+function dismissDelete() {
+  if (deleting.value) return
+  pendingDelete.value = null
+  deleteError.value = null
+}
+
+async function confirmDelete() {
+  const target = pendingDelete.value
+  if (!target) return
+  deleting.value = true
+  deleteError.value = null
+  try {
+    await deleteMerchantMenuItem(target.id)
+    await loadMenuItems()
+    pendingDelete.value = null
+  } catch (e) {
+    deleteError.value = e instanceof Error ? e.message : 'Failed to delete'
+  } finally {
+    deleting.value = false
+  }
+}
 </script>
 
 <template>
@@ -103,12 +143,7 @@ async function removeMenuItem(menuItem: MenuItem) {
     <AppHeader />
 
     <div class="max-w-2xl mx-auto px-4 py-6">
-      <!-- Nav tabs -->
-      <div class="flex gap-2 mb-6 border-b border-gray-200">
-        <button @click="router.push('/merchant')" class="pb-2 px-1 text-sm text-gray-500 hover:text-gray-700">Overview</button>
-        <button class="pb-2 px-1 text-sm font-semibold text-brand-500 border-b-2 border-brand-500">Menu</button>
-        <button @click="router.push('/merchant/orders')" class="pb-2 px-1 text-sm text-gray-500 hover:text-gray-700">Orders</button>
-      </div>
+      <MerchantTabs />
 
       <!-- Form (add / edit) -->
       <div v-if="mode !== 'list'">
@@ -132,8 +167,17 @@ async function removeMenuItem(menuItem: MenuItem) {
               <input v-model.number="form.price" type="number" min="0" required class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1.5">Category *</label>
-              <input v-model="form.category" type="text" placeholder="e.g. Salads, Mains" required class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
+              <label class="block text-sm font-medium text-gray-700 mb-1.5">Category</label>
+              <select
+                v-model="form.category"
+                class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-300"
+              >
+                <option value="">— None —</option>
+                <option v-for="c in categories" :key="c" :value="c">{{ c }}</option>
+              </select>
+              <p v-if="categories.length === 0" class="text-xs text-gray-400 mt-1">
+                No categories yet. Add some on the Categories tab.
+              </p>
             </div>
           </div>
           <div>
@@ -187,7 +231,9 @@ async function removeMenuItem(menuItem: MenuItem) {
 
             <div class="flex-1 min-w-0">
               <p class="font-semibold text-gray-900 text-sm">{{ menuItem.name }}</p>
-              <p class="text-xs text-gray-400">{{ menuItem.category }} · ฿{{ menuItem.price }}</p>
+              <p class="text-xs text-gray-400">
+                {{ menuItem.category || 'Uncategorized' }} · ฿{{ menuItem.price }}
+              </p>
               <span
                 class="text-xs px-2 py-0.5 rounded-full font-medium"
                 :class="menuItem.isAvailable ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'"
@@ -198,11 +244,24 @@ async function removeMenuItem(menuItem: MenuItem) {
 
             <div class="flex flex-col gap-1.5 shrink-0">
               <button @click="openEdit(menuItem)" class="text-brand-500 text-xs font-medium hover:underline">Edit</button>
-              <button @click="removeMenuItem(menuItem)" class="text-red-500 text-xs font-medium hover:underline">Delete</button>
+              <button @click="requestDelete(menuItem)" class="text-red-500 text-xs font-medium hover:underline">Delete</button>
             </div>
           </div>
         </div>
       </div>
     </div>
+
+    <ConfirmModal
+      :open="pendingDelete !== null"
+      :title="deleteTitle"
+      message="This dish will be removed from your menu. Past orders that include it are unaffected."
+      confirm-label="Yes, delete"
+      cancel-label="Keep it"
+      tone="danger"
+      :loading="deleting"
+      :error-message="deleteError"
+      @confirm="confirmDelete"
+      @cancel="dismissDelete"
+    />
   </div>
 </template>

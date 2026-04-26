@@ -11,8 +11,9 @@ import OnboardingPage from '../pages/OnboardingPage.vue'
 import ProfilePage from '../pages/ProfilePage.vue'
 import OrdersPage from '../pages/OrdersPage.vue'
 import RestaurantApplyPage from '../pages/RestaurantApplyPage.vue'
-import MerchantOverview from '../pages/MerchantOverview.vue'
+import MerchantSettings from '../pages/MerchantSettings.vue'
 import MerchantMenu from '../pages/MerchantMenu.vue'
+import MerchantCategories from '../pages/MerchantCategories.vue'
 import MerchantOrders from '../pages/MerchantOrders.vue'
 
 export const router = createRouter({
@@ -30,9 +31,11 @@ export const router = createRouter({
     { path: '/profile', component: ProfilePage },
     { path: '/orders', component: OrdersPage },
     { path: '/restaurants/apply', component: RestaurantApplyPage, meta: { requiresAuth: true } },
-    { path: '/merchant', component: MerchantOverview, meta: { requiresMerchant: true } },
-    { path: '/merchant/menu', component: MerchantMenu, meta: { requiresMerchant: true } },
+    { path: '/merchant', redirect: '/merchant/orders' },
     { path: '/merchant/orders', component: MerchantOrders, meta: { requiresMerchant: true } },
+    { path: '/merchant/menu', component: MerchantMenu, meta: { requiresMerchant: true } },
+    { path: '/merchant/categories', component: MerchantCategories, meta: { requiresMerchant: true } },
+    { path: '/merchant/settings', component: MerchantSettings, meta: { requiresMerchant: true } },
   ],
 })
 

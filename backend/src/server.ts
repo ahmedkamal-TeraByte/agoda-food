@@ -12,6 +12,7 @@ import userRoutes from './routes/users'
 import emailRoutes from './routes/email'
 import merchantRoutes from './routes/merchant'
 import stripeWebhookRoutes from './routes/stripeWebhook'
+import { isLocalStorage, LOCAL_UPLOAD_DIR, LOCAL_PUBLIC_PATH } from './lib/storage'
 
 const app = express()
 const PORT = process.env.PORT ?? 3000
@@ -40,6 +41,13 @@ app.use('/api/users', userRoutes)
 app.use('/api/restaurants', restaurantRoutes)
 app.use('/api/orders', orderRoutes)
 app.use('/api/merchant', merchantRoutes)
+
+// Serve uploaded files from the local filesystem in dev when R2 is not
+// configured. In production with R2, these URLs come straight from
+// Cloudflare's edge and this static handler is unused.
+if (isLocalStorage) {
+  app.use(LOCAL_PUBLIC_PATH, express.static(LOCAL_UPLOAD_DIR))
+}
 
 app.get('/health', (_req, res) => {
   res.json({

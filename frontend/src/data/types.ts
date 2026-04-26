@@ -14,7 +14,7 @@ export interface MenuItem {
   description: string
   price: number
   imageUrl?: string
-  category: string
+  category?: string
   tags: MenuItemTag[]
   isAvailable?: boolean
 }
@@ -31,11 +31,14 @@ export interface Restaurant {
   imageUrl: string
   logoUrl: string
   tags: string[]
+  categories: string[]
   isOpen: boolean
   status?: 'draft' | 'active' | 'suspended'
   ownerUserId: string
   orderWindow?: OrderWindow
   referral?: { name: string; email: string; verifiedAt?: string }
+  /** Whether the merchant has uploaded a PromptPay QR (presence-only flag for UIs). */
+  hasPromptPay?: boolean
 }
 
 export interface RestaurantWithMenu extends Restaurant {
@@ -73,6 +76,7 @@ export interface User {
 
 export type OrderStatus =
   | 'awaiting_payment'
+  | 'pending_verification'
   | 'pending'
   | 'confirmed'
   | 'preparing'
@@ -81,17 +85,53 @@ export type OrderStatus =
 
 export type PaymentStatus = 'unpaid' | 'paid' | 'refunded'
 
-export type PromptPayStatus = 'pending' | 'paid' | 'expired' | 'failed'
+export type PaymentProofStatus = 'pending' | 'verified' | 'rejected'
 
+/**
+ * BYO-QR PromptPay payment payload returned by POST /orders/:id/pay and
+ * GET /orders/:id/payment.
+ *
+ * The QR is regenerated server-side from the merchant's stored EMV string,
+ * so it does NOT expire — we keep the field naming familiar to existing UI
+ * code but drop the expiresAt countdown. The backend returns the merchant's
+ * raw payload alongside the rendered PNG in case the UI ever wants it.
+ */
 export interface PromptPayQR {
-  paymentIntentId: string
   qrImageUrl: string
-  qrSvgUrl: string
-  qrData: string
-  expiresAt: string   // ISO string from JSON
+  qrPayload: string
   amount: number      // satang (THB × 100)
   currency: 'thb'
-  status?: PromptPayStatus  // absent on create response, present on GET /payment
+  paymentStatus: PaymentStatus
+  proofStatus?: PaymentProofStatus
+  proofUploadedAt?: string
+}
+
+export interface PaymentProof {
+  fileKey: string
+  contentType: string
+  sizeBytes: number
+  uploadedAt: string
+  status: PaymentProofStatus
+  reviewedAt?: string
+  reviewerNote?: string
+}
+
+/** Short-lived signed URL returned to the merchant for viewing a proof. */
+export interface PaymentProofView {
+  signedUrl: string
+  expiresAt: string
+  uploadedAt: string
+  contentType: string
+  sizeBytes: number
+  status: PaymentProofStatus
+}
+
+export interface OrderCustomer {
+  id: string
+  displayName: string
+  email?: string
+  phone?: string
+  pictureUrl?: string
 }
 
 export interface Order {
@@ -105,6 +145,8 @@ export interface Order {
   total: number
   status: OrderStatus
   paymentStatus?: PaymentStatus
+  paymentProof?: PaymentProof
   serviceDate?: string
   createdAt: string
+  customer?: OrderCustomer
 }

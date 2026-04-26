@@ -25,11 +25,18 @@ export interface IRestaurant extends Document {
   imageUrl: string
   logoUrl: string
   tags: string[]
+  categories: string[]
   isOpen: boolean
   ownerUserId: Types.ObjectId
   orderWindow: IOrderWindow
   referral?: IReferral
   status: RestaurantStatus
+  /**
+   * EMV TLV payload string decoded from the merchant's uploaded PromptPay QR.
+   * We re-render the QR at order time from this string. Empty string means
+   * the merchant has not set up payment yet (orders cannot be placed).
+   */
+  promptPayPayload?: string
   createdAt: Date
   updatedAt: Date
 }
@@ -64,6 +71,7 @@ const RestaurantSchema = new Schema<IRestaurant>(
     imageUrl: { type: String, required: true },
     logoUrl: { type: String, required: true },
     tags: [{ type: String }],
+    categories: { type: [String], default: [] },
     isOpen: { type: Boolean, required: true, default: true },
     ownerUserId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     orderWindow: { type: OrderWindowSchema, default: () => ({}) },
@@ -73,6 +81,7 @@ const RestaurantSchema = new Schema<IRestaurant>(
       enum: ['draft', 'active', 'suspended'],
       default: 'active',
     },
+    promptPayPayload: { type: String, default: '' },
   },
   { timestamps: true },
 )

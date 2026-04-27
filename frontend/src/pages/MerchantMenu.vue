@@ -9,6 +9,7 @@ import {
   createMerchantMenuItem,
   updateMerchantMenuItem,
   deleteMerchantMenuItem,
+  uploadMerchantImage,
 } from '../services/api'
 import type { MenuItem } from '../data/types'
 
@@ -25,12 +26,16 @@ const form = reactive({
   name: '',
   description: '',
   price: 0,
-  imageUrl: '',
+  imageKey: '',
+  imageUrl: '',   // preview-only, not sent to the API
   category: '',
   isAvailable: true,
 })
 const formError = ref<string | null>(null)
 const saving = ref(false)
+const photoUploading = ref(false)
+const photoError = ref<string | null>(null)
+const photoInputRef = ref<HTMLInputElement | null>(null)
 
 const pendingDelete = ref<MenuItem | null>(null)
 const deleting = ref(false)
@@ -63,9 +68,10 @@ async function loadCategories() {
 }
 
 function openAdd() {
-  Object.assign(form, { name: '', description: '', price: 0, imageUrl: '', category: '', isAvailable: true })
+  Object.assign(form, { name: '', description: '', price: 0, imageKey: '', imageUrl: '', category: '', isAvailable: true })
   editingMenuItem.value = null
   formError.value = null
+  photoError.value = null
   mode.value = 'add'
 }
 
@@ -74,13 +80,43 @@ function openEdit(menuItem: MenuItem) {
     name: menuItem.name,
     description: menuItem.description,
     price: menuItem.price,
+    imageKey: menuItem.imageKey ?? '',
     imageUrl: menuItem.imageUrl ?? '',
     category: menuItem.category ?? '',
     isAvailable: menuItem.isAvailable ?? true,
   })
   editingMenuItem.value = menuItem
   formError.value = null
+  photoError.value = null
   mode.value = 'edit'
+}
+
+function pickPhoto() {
+  photoInputRef.value?.click()
+}
+
+async function onPhotoChosen(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  photoError.value = null
+  photoUploading.value = true
+  try {
+    const { imageUrl, fileKey } = await uploadMerchantImage(file, 'menu-item')
+    form.imageKey = fileKey
+    form.imageUrl = imageUrl
+  } catch (e) {
+    photoError.value = e instanceof Error ? e.message : 'Failed to upload photo'
+  } finally {
+    photoUploading.value = false
+    input.value = ''
+  }
+}
+
+function removePhoto() {
+  form.imageKey = ''
+  form.imageUrl = ''
+  photoError.value = null
 }
 
 async function saveForm() {
@@ -92,9 +128,12 @@ async function saveForm() {
   formError.value = null
   try {
     const payload = {
-      ...form,
-      imageUrl: form.imageUrl || undefined,
+      name: form.name,
+      description: form.description,
+      price: form.price,
+      imageKey: form.imageKey || undefined,
       category: form.category || '',
+      isAvailable: form.isAvailable,
     }
     if (mode.value === 'add') {
       await createMerchantMenuItem(payload)
@@ -181,8 +220,44 @@ async function confirmDelete() {
             </div>
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1.5">Photo URL (optional)</label>
-            <input v-model="form.imageUrl" type="url" placeholder="https://..." class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Photo (optional)</label>
+
+            <input
+              ref="photoInputRef"
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+              class="hidden"
+              @change="onPhotoChosen"
+            />
+
+            <div class="flex items-center gap-3">
+              <div class="w-20 h-20 rounded-xl bg-gray-100 border border-gray-200 shrink-0 flex items-center justify-center overflow-hidden">
+                <img v-if="form.imageUrl" :src="form.imageUrl" alt="Dish photo" class="w-full h-full object-cover" />
+                <span v-else class="text-2xl text-gray-300">🍽️</span>
+              </div>
+
+              <div class="flex flex-col gap-1.5">
+                <button
+                  type="button"
+                  @click="pickPhoto"
+                  :disabled="photoUploading"
+                  class="bg-brand-500 disabled:opacity-60 text-white text-xs font-semibold rounded-lg px-3 py-1.5"
+                >
+                  {{ photoUploading ? 'Uploading…' : form.imageUrl ? 'Replace photo' : 'Upload photo' }}
+                </button>
+                <button
+                  v-if="form.imageUrl"
+                  type="button"
+                  @click="removePhoto"
+                  class="text-xs text-red-500 font-medium hover:underline text-left"
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+
+            <p v-if="photoError" class="text-xs text-red-600 mt-2">⚠️ {{ photoError }}</p>
+            <p v-else class="text-xs text-gray-400 mt-2">JPEG, PNG, WebP or HEIC. We resize and re-encode for you.</p>
           </div>
           <div class="flex items-center justify-between py-2">
             <span class="text-sm font-medium text-gray-700">Available to order</span>

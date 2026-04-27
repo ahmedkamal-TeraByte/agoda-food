@@ -1,13 +1,16 @@
 import bcrypt from 'bcryptjs'
 import { OtpCode, OtpPurpose } from '../models/OtpCode'
+import { sendOtpEmail } from './email'
 
 const OTP_TTL_MINUTES = parseInt(process.env.OTP_TTL_MINUTES ?? '10', 10)
 const MAX_ATTEMPTS = 3
+// In dev we still print the code to the server console; in prod rely on email only.
+const LOG_OTP_TO_CONSOLE = process.env.NODE_ENV !== 'production'
 
 /**
  * Generates a 6-digit OTP for the given email + purpose, invalidates any prior
- * unused OTPs for that pair, and returns the plaintext code so the caller can
- * log it to the console (dev) or send it via email (prod).
+ * unused OTPs for that pair, persists a hashed copy, and emails the plaintext
+ * code to the recipient via Mailjet.
  */
 export async function generateOtp(email: string, purpose: OtpPurpose): Promise<string> {
   // Invalidate any prior unconsumed OTPs for this email+purpose
@@ -19,7 +22,21 @@ export async function generateOtp(email: string, purpose: OtpPurpose): Promise<s
 
   await OtpCode.create({ email: email.toLowerCase(), codeHash, purpose, expiresAt, attempts: 0 })
 
-  console.log(`[OTP] ${purpose} for ${email}: ${code} (expires in ${OTP_TTL_MINUTES}min)`)
+  if (LOG_OTP_TO_CONSOLE) {
+    console.log(`[OTP] ${purpose} for ${email}: ${code} (expires in ${OTP_TTL_MINUTES}min)`)
+  }
+
+  // Send via email. We don't fail the whole flow if delivery hiccups in dev —
+  // the console log above still lets devs verify the code locally.
+  try {
+    await sendOtpEmail(email, code, OTP_TTL_MINUTES, purpose)
+  } catch (err) {
+    if (process.env.NODE_ENV === 'production') {
+      throw err
+    }
+    console.warn('[OTP] email delivery failed (dev — continuing):', err)
+  }
+
   return code
 }
 

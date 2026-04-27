@@ -13,6 +13,7 @@ export interface MenuItem {
   name: string
   description: string
   price: number
+  imageKey?: string
   imageUrl?: string
   category?: string
   tags: MenuItemTag[]

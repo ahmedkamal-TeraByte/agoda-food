@@ -9,8 +9,10 @@ import {
   fetchMerchantPromptPayQr,
   uploadMerchantPromptPayQr,
   deleteMerchantPromptPayQr,
+  uploadMerchantImage,
 } from '../services/api'
 import type { Restaurant } from '../data/types'
+import type { MerchantImageKind } from '../services/api'
 
 const restaurant = ref<Restaurant | null>(null)
 const loading = ref(true)
@@ -40,6 +42,14 @@ const qrInputRef = ref<HTMLInputElement | null>(null)
 const showRemoveQrModal = ref(false)
 const removingQr = ref(false)
 const removeQrError = ref<string | null>(null)
+
+// --- Cover image / logo uploads ---
+const coverInputRef = ref<HTMLInputElement | null>(null)
+const logoInputRef = ref<HTMLInputElement | null>(null)
+const coverUploading = ref(false)
+const logoUploading = ref(false)
+const coverError = ref<string | null>(null)
+const logoError = ref<string | null>(null)
 
 onMounted(async () => {
   try {
@@ -95,6 +105,51 @@ function dismissRemoveQrModal() {
   if (removingQr.value) return
   showRemoveQrModal.value = false
   removeQrError.value = null
+}
+
+/**
+ * Upload a cover photo or logo, then persist the resulting URL on the
+ * restaurant in a single PATCH so a page refresh keeps the new image.
+ */
+async function uploadPhoto(kind: MerchantImageKind, file: File) {
+  const isCover = kind === 'restaurant-cover'
+  const uploadingRef = isCover ? coverUploading : logoUploading
+  const errorRef = isCover ? coverError : logoError
+  const field = isCover ? 'imageUrl' : 'logoUrl'
+
+  errorRef.value = null
+  uploadingRef.value = true
+  try {
+    const { imageUrl } = await uploadMerchantImage(file, kind)
+    const updated = await updateMerchantRestaurant({ [field]: imageUrl } as Partial<Restaurant>)
+    restaurant.value = updated
+  } catch (e) {
+    errorRef.value = e instanceof Error ? e.message : 'Failed to upload photo'
+  } finally {
+    uploadingRef.value = false
+  }
+}
+
+function pickCover() {
+  coverInputRef.value?.click()
+}
+
+function pickLogo() {
+  logoInputRef.value?.click()
+}
+
+async function onCoverChosen(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (file) await uploadPhoto('restaurant-cover', file)
+  input.value = ''
+}
+
+async function onLogoChosen(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (file) await uploadPhoto('restaurant-logo', file)
+  input.value = ''
 }
 
 async function confirmRemoveQr() {
@@ -228,6 +283,86 @@ async function save() {
             {{ saving ? 'Saving…' : 'Save changes' }}
           </button>
         </form>
+
+        <!-- Restaurant photos -->
+        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mt-5 space-y-5">
+          <div>
+            <h2 class="font-semibold text-gray-800">Restaurant photos</h2>
+            <p class="text-xs text-gray-500 mt-0.5">
+              Cover photo shows on the restaurant page. The logo appears on cards across the app.
+            </p>
+          </div>
+
+          <!-- Cover -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Cover photo</label>
+
+            <div class="relative w-full aspect-[16/9] rounded-xl overflow-hidden bg-gray-100 border border-gray-200">
+              <img
+                v-if="restaurant.imageUrl"
+                :src="restaurant.imageUrl"
+                alt="Cover"
+                class="w-full h-full object-cover"
+              />
+              <div v-else class="w-full h-full flex items-center justify-center text-4xl text-gray-300">🍽️</div>
+            </div>
+
+            <input
+              ref="coverInputRef"
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+              class="hidden"
+              @change="onCoverChosen"
+            />
+
+            <div class="mt-3 flex items-center gap-2">
+              <button
+                type="button"
+                @click="pickCover"
+                :disabled="coverUploading"
+                class="bg-brand-500 disabled:opacity-60 text-white text-sm font-semibold rounded-xl px-4 py-2"
+              >
+                {{ coverUploading ? 'Uploading…' : restaurant.imageUrl ? 'Replace cover' : 'Upload cover' }}
+              </button>
+            </div>
+            <p v-if="coverError" class="text-xs text-red-600 mt-2">⚠️ {{ coverError }}</p>
+          </div>
+
+          <!-- Logo -->
+          <div class="border-t border-gray-100 pt-5">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Logo</label>
+
+            <div class="flex items-center gap-4">
+              <div class="w-20 h-20 rounded-xl overflow-hidden bg-gray-100 border border-gray-200 shrink-0">
+                <img
+                  v-if="restaurant.logoUrl"
+                  :src="restaurant.logoUrl"
+                  alt="Logo"
+                  class="w-full h-full object-cover"
+                />
+                <div v-else class="w-full h-full flex items-center justify-center text-2xl text-gray-300">🏷️</div>
+              </div>
+
+              <input
+                ref="logoInputRef"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+                class="hidden"
+                @change="onLogoChosen"
+              />
+
+              <button
+                type="button"
+                @click="pickLogo"
+                :disabled="logoUploading"
+                class="bg-brand-500 disabled:opacity-60 text-white text-sm font-semibold rounded-xl px-4 py-2"
+              >
+                {{ logoUploading ? 'Uploading…' : restaurant.logoUrl ? 'Replace logo' : 'Upload logo' }}
+              </button>
+            </div>
+            <p v-if="logoError" class="text-xs text-red-600 mt-2">⚠️ {{ logoError }}</p>
+          </div>
+        </div>
 
         <!-- PromptPay QR onboarding -->
         <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mt-5">

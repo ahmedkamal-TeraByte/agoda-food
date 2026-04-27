@@ -94,6 +94,7 @@ function toMenuItem(d: Record<string, unknown>): MenuItem {
     name: d.name as string,
     description: d.description as string,
     price: d.price as number,
+    imageKey: d.imageKey as string | undefined,
     imageUrl: d.imageUrl as string | undefined,
     category: rawCategory || undefined,
     tags,
@@ -511,6 +512,34 @@ export async function deleteMerchantPromptPayQr(): Promise<PromptPayQrConfig> {
   return request<PromptPayQrConfig>("/merchant/promptpay-qr", {
     method: "DELETE",
   });
+}
+
+// --- Merchant: photo uploads (cover, logo, menu item) ---
+
+export type MerchantImageKind =
+  | "restaurant-cover"
+  | "restaurant-logo"
+  | "menu-item";
+
+export interface MerchantImageUploadResponse {
+  imageUrl: string;
+  fileKey: string;
+  sizeBytes: number;
+}
+
+/**
+ * Uploads a photo to R2 via the backend, which re-encodes via sharp and
+ * returns a same-origin URL (`/api/images/...`) the caller can persist into
+ * Restaurant.imageUrl / .logoUrl or MenuItem.imageUrl.
+ */
+export async function uploadMerchantImage(
+  file: File,
+  kind: MerchantImageKind,
+): Promise<MerchantImageUploadResponse> {
+  return uploadFile<MerchantImageUploadResponse>(
+    `/merchant/uploads/image?kind=${kind}`,
+    file,
+  );
 }
 
 // --- Merchant: payment-proof review ---

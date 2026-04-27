@@ -3,6 +3,7 @@ import { Restaurant } from '../models/Restaurant'
 import { MenuItem } from '../models/MenuItem'
 import { requireUser } from '../middleware/auth'
 import { generateOtp, verifyOtp } from '../lib/otp'
+import { publicStorage } from '../lib/storage'
 
 const router = Router()
 
@@ -55,7 +56,14 @@ router.get('/:id/menu', async (req: Request, res: Response) => {
       restaurantId: req.params.id,
       isAvailable: true,
     }).sort({ category: 1, createdAt: 1 })
-    res.json(menuItems)
+    const serialized = menuItems.map((item) => {
+      const obj = item.toObject() as Record<string, unknown>
+      obj.imageUrl = obj.imageKey
+        ? publicStorage.publicUrl(obj.imageKey as string)
+        : undefined
+      return obj
+    })
+    res.json(serialized)
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch menu' })
   }

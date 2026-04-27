@@ -8,7 +8,7 @@ export interface IMenuItem extends Document {
   name: string
   description: string
   price: number // THB
-  imageUrl?: string
+  imageKey?: string
   category?: string
   tags: MenuItemTag[]
   isAvailable: boolean
@@ -26,7 +26,7 @@ const MenuItemSchema = new Schema<IMenuItem>(
     name: { type: String, required: true },
     description: { type: String, required: true },
     price: { type: Number, required: true, min: 0 },
-    imageUrl: { type: String },
+    imageKey: { type: String },
     category: { type: String, default: '' },
     tags: {
       type: [{ type: String, enum: MENU_ITEM_TAGS }],

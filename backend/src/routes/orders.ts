@@ -8,7 +8,7 @@ import { Payment } from '../models/Payment'
 import { requireUser, requireMerchant } from '../middleware/auth'
 import { getServiceDate } from '../lib/orderWindow'
 import { renderQrDataUrl } from '../lib/promptPay'
-import { storage } from '../lib/storage'
+import { privateStorage, publicStorage } from '../lib/storage'
 import { imageUpload } from '../lib/upload'
 import { pushText } from '../lib/lineBot'
 
@@ -105,7 +105,9 @@ router.post(
           menuItemId: menuItem._id,
           name: menuItem.name,
           price: menuItem.price,
-          imageUrl: menuItem.imageUrl,
+          imageUrl: menuItem.imageKey
+            ? publicStorage.publicUrl(menuItem.imageKey)
+            : undefined,
           quantity: input.quantity,
           note: input.note ?? '',
         })
@@ -274,7 +276,7 @@ router.post(
         .toBuffer()
 
       const fileKey = `payment-proofs/${order._id}/${randomUUID()}.jpg`
-      await storage.put(fileKey, processed, 'image/jpeg')
+      await privateStorage.put(fileKey, processed, 'image/jpeg')
 
       // Append a new audit row for this attempt. Prior attempts (if any)
       // stay in the collection with their existing status — the cleanup cron

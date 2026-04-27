@@ -1,22 +1,41 @@
 /**
  * Object storage abstraction.
  *
- * In production we use Cloudflare R2 (S3-compatible) for storing user-uploaded
- * payment-proof screenshots. The interface is generic enough that we can swap
- * to S3 / GCS / local filesystem later without touching call sites.
+ * We run TWO storage instances in parallel:
+ *
+ *   * `privateStorage` — payment-proof screenshots. Bucket is private; reads
+ *     happen through short-lived signed URLs (~5 min) issued by the backend.
+ *   * `publicStorage`  — restaurant covers, logos, menu item photos. Bucket
+ *     has public read enabled on Cloudflare; the browser fetches images
+ *     directly from `R2_PUBLIC_BASE_URL/<key>` with no API call.
+ *
+ * Each bucket has its own scoped R2 API token, so a leaked credential on one
+ * path can't touch the other.
  *
  * Required env vars (R2):
- *   R2_ACCOUNT_ID         — Cloudflare account ID
- *   R2_ACCESS_KEY_ID      — R2 API token access key
- *   R2_SECRET_ACCESS_KEY  — R2 API token secret
- *   R2_BUCKET             — bucket name (e.g. agoda-food-uploads)
+ *   R2_ACCOUNT_ID                — Cloudflare account ID (shared)
+ *
+ *   # private bucket
+ *   R2_ACCESS_KEY_ID             — token access key for the private bucket
+ *   R2_SECRET_ACCESS_KEY         — token secret for the private bucket
+ *   R2_BUCKET                    — private bucket name
+ *
+ *   # public bucket
+ *   R2_PUBLIC_ACCESS_KEY_ID      — token access key for the public bucket
+ *   R2_PUBLIC_SECRET_ACCESS_KEY  — token secret for the public bucket
+ *   R2_PUBLIC_BUCKET             — public bucket name
+ *   R2_PUBLIC_BASE_URL           — public read URL prefix (no trailing /)
  *
  * If any of those are missing, we fall back to a local-filesystem storage
  * (writes under <repo>/.uploads/) so the app boots cleanly in dev without
- * cloud creds. Local storage is NOT durable across redeploys — set up R2
- * before going to production.
+ * cloud creds. Local storage is NOT durable across redeploys.
  */
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  DeleteObjectCommand,
+} from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import * as fs from 'fs/promises'
 import * as path from 'path'
@@ -30,15 +49,35 @@ export interface Storage {
   delete(key: string): Promise<void>
 }
 
+/**
+ * A storage that ALSO supports stable, unauthenticated public URLs.
+ * Distinct type so that calling `publicUrl()` on the private bucket is a
+ * compile-time error.
+ */
+export interface PublicStorage extends Storage {
+  /** Stable absolute URL the browser can embed in `<img src>`. */
+  publicUrl(key: string): string
+}
+
 // ---------------------------------------------------------------------------
 // Cloudflare R2
 // ---------------------------------------------------------------------------
 
-class R2Storage implements Storage {
+interface R2StorageOpts {
+  accountId: string
+  accessKeyId: string
+  secretAccessKey: string
+  bucket: string
+  /** When set, `publicUrl()` returns `${publicBaseUrl}/<key>`. */
+  publicBaseUrl?: string
+}
+
+class R2Storage implements PublicStorage {
   private client: S3Client
   private bucket: string
+  private publicBaseUrl?: string
 
-  constructor(opts: { accountId: string; accessKeyId: string; secretAccessKey: string; bucket: string }) {
+  constructor(opts: R2StorageOpts) {
     this.client = new S3Client({
       region: 'auto',
       endpoint: `https://${opts.accountId}.r2.cloudflarestorage.com`,
@@ -48,6 +87,7 @@ class R2Storage implements Storage {
       },
     })
     this.bucket = opts.bucket
+    this.publicBaseUrl = opts.publicBaseUrl
   }
 
   async put(key: string, body: Buffer, contentType: string): Promise<string> {
@@ -77,13 +117,22 @@ class R2Storage implements Storage {
       console.warn('[storage] delete failed for', key, err)
     }
   }
+
+  publicUrl(key: string): string {
+    if (!this.publicBaseUrl) {
+      throw new Error(
+        'publicUrl() called on an R2 storage without R2_PUBLIC_BASE_URL configured',
+      )
+    }
+    return `${this.publicBaseUrl}/${key}`
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Local filesystem fallback (dev only)
 // ---------------------------------------------------------------------------
 
-class LocalFsStorage implements Storage {
+class LocalFsStorage implements PublicStorage {
   private root: string
   private publicBase: string
 
@@ -109,7 +158,10 @@ class LocalFsStorage implements Storage {
   }
 
   async getSignedUrl(key: string, _ttlSeconds: number): Promise<string> {
-    // Local mode: return a static path; the Express app serves this folder.
+    return `${this.publicBase}/${key}`
+  }
+
+  publicUrl(key: string): string {
     return `${this.publicBase}/${key}`
   }
 
@@ -130,25 +182,65 @@ class LocalFsStorage implements Storage {
 // ---------------------------------------------------------------------------
 
 const accountId = process.env.R2_ACCOUNT_ID ?? ''
-const accessKeyId = process.env.R2_ACCESS_KEY_ID ?? ''
-const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY ?? ''
-const bucket = process.env.R2_BUCKET ?? ''
 
-const hasR2 = Boolean(accountId && accessKeyId && secretAccessKey && bucket)
+// Private bucket
+const privateAccessKeyId = process.env.R2_ACCESS_KEY_ID ?? ''
+const privateSecretAccessKey = process.env.R2_SECRET_ACCESS_KEY ?? ''
+const privateBucket = process.env.R2_BUCKET ?? ''
+const hasPrivateR2 = Boolean(
+  accountId && privateAccessKeyId && privateSecretAccessKey && privateBucket,
+)
+
+// Public bucket
+const publicAccessKeyId = process.env.R2_PUBLIC_ACCESS_KEY_ID ?? ''
+const publicSecretAccessKey = process.env.R2_PUBLIC_SECRET_ACCESS_KEY ?? ''
+const publicBucket = process.env.R2_PUBLIC_BUCKET ?? ''
+const publicBaseUrl = (process.env.R2_PUBLIC_BASE_URL ?? '').replace(/\/$/, '')
+const hasPublicR2 = Boolean(
+  accountId &&
+    publicAccessKeyId &&
+    publicSecretAccessKey &&
+    publicBucket &&
+    publicBaseUrl,
+)
 
 export const LOCAL_UPLOAD_DIR = path.resolve(process.cwd(), '..', '.uploads')
 export const LOCAL_PUBLIC_PATH = '/uploads'
 
-export const storage: Storage = hasR2
-  ? new R2Storage({ accountId, accessKeyId, secretAccessKey, bucket })
-  : new LocalFsStorage(LOCAL_UPLOAD_DIR, LOCAL_PUBLIC_PATH)
+const localFs = new LocalFsStorage(LOCAL_UPLOAD_DIR, LOCAL_PUBLIC_PATH)
 
-if (!hasR2) {
+export const privateStorage: Storage = hasPrivateR2
+  ? new R2Storage({
+      accountId,
+      accessKeyId: privateAccessKeyId,
+      secretAccessKey: privateSecretAccessKey,
+      bucket: privateBucket,
+    })
+  : localFs
+
+export const publicStorage: PublicStorage = hasPublicR2
+  ? new R2Storage({
+      accountId,
+      accessKeyId: publicAccessKeyId,
+      secretAccessKey: publicSecretAccessKey,
+      bucket: publicBucket,
+      publicBaseUrl,
+    })
+  : localFs
+
+if (!hasPrivateR2) {
   console.warn(
-    '[storage] R2 credentials missing — using local filesystem at ' +
+    '[storage] private R2 credentials missing — using local filesystem at ' +
       LOCAL_UPLOAD_DIR +
       '. Set R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / R2_BUCKET for production.',
   )
 }
+if (!hasPublicR2) {
+  console.warn(
+    '[storage] public R2 credentials missing — using local filesystem at ' +
+      LOCAL_UPLOAD_DIR +
+      '. Set R2_PUBLIC_ACCESS_KEY_ID / R2_PUBLIC_SECRET_ACCESS_KEY / R2_PUBLIC_BUCKET / R2_PUBLIC_BASE_URL for production.',
+  )
+}
 
-export const isLocalStorage = !hasR2
+export const isLocalStorage = !hasPrivateR2 || !hasPublicR2

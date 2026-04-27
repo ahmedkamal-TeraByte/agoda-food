@@ -57,7 +57,7 @@ router.get('/:id/menu', async (req: Request, res: Response) => {
       isAvailable: true,
     }).sort({ category: 1, createdAt: 1 })
     const serialized = menuItems.map((item) => {
-      const obj = item.toObject() as Record<string, unknown>
+      const obj = item.toObject() as unknown as Record<string, unknown>
       obj.imageUrl = obj.imageKey
         ? publicStorage.publicUrl(obj.imageKey as string)
         : undefined

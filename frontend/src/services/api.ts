@@ -299,6 +299,7 @@ export interface LineAuthResponse {
   token: string;
   user: User;
   needsOnboarding: boolean;
+  redirectAfterLogin?: string;
 }
 
 function toLineAuthResponse(raw: Record<string, unknown>): LineAuthResponse {
@@ -306,12 +307,13 @@ function toLineAuthResponse(raw: Record<string, unknown>): LineAuthResponse {
     token: raw.token as string,
     user: toUser(raw.user as Record<string, unknown>),
     needsOnboarding: raw.needsOnboarding as boolean,
+    redirectAfterLogin: raw.redirectAfterLogin as string | undefined,
   };
 }
 
 export async function exchangeLineCode(payload: {
   code: string;
-  redirectUri: string;
+  state: string;
 }): Promise<LineAuthResponse> {
   const raw = await request<Record<string, unknown>>("/auth/line/exchange", {
     method: "POST",

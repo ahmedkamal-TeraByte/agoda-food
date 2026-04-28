@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { exchangeLineCode } from '../services/api'
-import { setAuthToken } from '../services/api'
+import { exchangeLineCode, setAuthToken } from '../services/api'
 import { useUserStore } from '../stores/user'
-import { consumeOauthState } from '../lib/oauth'
 
 const route = useRoute()
 const router = useRouter()
@@ -14,7 +12,7 @@ const error = ref<string | null>(null)
 
 onMounted(async () => {
   const code = route.query.code as string | undefined
-  const returnedState = route.query.state as string | undefined
+  const state = route.query.state as string | undefined
 
   // Error returned directly by LINE (user denied, etc.)
   const lineError = route.query.error as string | undefined
@@ -23,28 +21,26 @@ onMounted(async () => {
     return
   }
 
-  if (!code || !returnedState) {
+  if (!code || !state) {
     error.value = 'Missing code or state from LINE.'
     return
   }
 
-  // Verify CSRF state
-  const stored = consumeOauthState()
-  if (!stored || stored.state !== returnedState) {
-    error.value = 'State mismatch — possible CSRF. Please try logging in again.'
-    return
-  }
-
+  // State is verified server-side against the HttpOnly cookie set by
+  // /api/auth/line/start. We just forward what LINE gave us.
   try {
-    const redirectUri = `${window.location.origin}/auth/line/callback`
-    const { token, user, needsOnboarding } = await exchangeLineCode({ code, redirectUri })
+    const { token, user, needsOnboarding, redirectAfterLogin } = await exchangeLineCode({
+      code,
+      state,
+    })
     userStore.setSession(user, token)
     setAuthToken(token)
 
+    const dest = redirectAfterLogin || '/'
     if (needsOnboarding) {
-      router.replace({ path: '/onboarding', query: { redirect: stored.redirectAfterLogin } })
+      router.replace({ path: '/onboarding', query: { redirect: dest } })
     } else {
-      router.replace(stored.redirectAfterLogin || '/')
+      router.replace(dest)
     }
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Login failed. Please try again.'

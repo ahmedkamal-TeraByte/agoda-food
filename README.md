@@ -93,5 +93,4 @@ Copy `.env.example` → `.env` in `backend/`, and `frontend/.env.example` → `f
 | `LINE_LOGIN_REDIRECT_URI` | backend | Callback URL registered in LINE console |
 | `JWT_SECRET` | backend | Long random string for signing JWTs |
 | `JWT_EXPIRES_IN` | backend | Token TTL e.g. `7d` |
-| `VITE_LINE_CHANNEL_ID` | frontend | Same channel ID (not a secret) |
 | `VITE_LIFF_ID` | frontend | LIFF app ID from LINE console |

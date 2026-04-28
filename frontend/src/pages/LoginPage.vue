@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
 import AppHeader from '../components/AppHeader.vue'
-import { buildLineAuthorizeUrl } from '../lib/oauth'
 import { useUserStore } from '../stores/user'
 
 const route = useRoute()
@@ -16,9 +15,12 @@ if (user.isLoggedIn && !user.needsOnboarding) {
 const redirectAfterLogin =
   typeof route.query.redirect === 'string' ? route.query.redirect : '/'
 
+// State (CSRF token) and the redirect destination are now managed server-side
+// via an HttpOnly cookie, so we just hand off to the backend. This survives
+// Safari's per-tab sessionStorage scoping and ITP storage clearing.
 function loginWithLine() {
-  const url = buildLineAuthorizeUrl(redirectAfterLogin)
-  window.location.href = url
+  const params = new URLSearchParams({ redirect: redirectAfterLogin })
+  window.location.href = `/api/auth/line/start?${params}`
 }
 </script>
 

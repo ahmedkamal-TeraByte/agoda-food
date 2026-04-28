@@ -1,14 +1,76 @@
 import { Router, Request, Response } from 'express'
+import crypto from 'crypto'
 import { User, IUser } from '../models/User'
 import { exchangeCodeForTokens, verifyIdToken, LineClaims } from '../lib/line'
 import { signSession } from '../lib/jwt'
 
 const router = Router()
 
+const CHANNEL_ID = process.env.LINE_CHANNEL_ID ?? ''
+const LINE_LOGIN_REDIRECT_URI = process.env.LINE_LOGIN_REDIRECT_URI ?? ''
+const IS_PROD = process.env.NODE_ENV === 'production'
+
+// HttpOnly cookie that holds the OAuth `state` (CSRF token) plus where to send
+// the user after a successful login. Lives on the server so Safari's per-tab
+// sessionStorage and ITP can't lose it between the LINE redirect and callback.
+const STATE_COOKIE = 'oauth_state'
+const STATE_COOKIE_PATH = '/api/auth/line'
+const STATE_COOKIE_MAX_AGE_MS = 10 * 60 * 1000
+
+interface OAuthStatePayload {
+  state: string
+  redirectAfterLogin: string
+}
+
 interface AuthResponse {
   token: string
   user: IUser
   needsOnboarding: boolean
+}
+
+function randomToken(bytes = 32): string {
+  return crypto.randomBytes(bytes).toString('hex')
+}
+
+function getCookie(req: Pick<Request, 'headers'>, name: string): string | undefined {
+  const header = req.headers.cookie
+  if (!header) return undefined
+  for (const part of header.split(';')) {
+    const trimmed = part.trim()
+    const eq = trimmed.indexOf('=')
+    if (eq < 0) continue
+    if (trimmed.slice(0, eq) === name) {
+      return decodeURIComponent(trimmed.slice(eq + 1))
+    }
+  }
+  return undefined
+}
+
+function setStateCookie(res: Response, payload: OAuthStatePayload): void {
+  res.cookie(STATE_COOKIE, JSON.stringify(payload), {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: IS_PROD,
+    path: STATE_COOKIE_PATH,
+    maxAge: STATE_COOKIE_MAX_AGE_MS,
+  })
+}
+
+function clearStateCookie(res: Response): void {
+  res.clearCookie(STATE_COOKIE, { path: STATE_COOKIE_PATH })
+}
+
+function readStateCookie(req: Pick<Request, 'headers'>): OAuthStatePayload | null {
+  const raw = getCookie(req, STATE_COOKIE)
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as Partial<OAuthStatePayload>
+    if (typeof parsed.state !== 'string') return null
+    if (typeof parsed.redirectAfterLogin !== 'string') return null
+    return { state: parsed.state, redirectAfterLogin: parsed.redirectAfterLogin }
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -49,24 +111,76 @@ async function resolveLineUser(claims: LineClaims): Promise<AuthResponse> {
 }
 
 /**
- * POST /api/auth/line/exchange
- * External-browser OAuth flow. Receives the authorization code from LINE,
- * exchanges it for tokens, verifies the id_token, upserts the user.
+ * GET /api/auth/line/start?redirect=/some/path
+ * Begins the LINE OAuth flow: stashes a random `state` in an HttpOnly cookie
+ * and 302-redirects the user to LINE. Doing this server-side means the state
+ * is bound to the browser (cookie), not to a single tab (sessionStorage),
+ * which fixes the "State mismatch" error Safari sees when ITP or a new-tab
+ * callback wipes per-tab storage.
+ */
+router.get('/line/start', (req: Request, res: Response) => {
+  if (!CHANNEL_ID || !LINE_LOGIN_REDIRECT_URI) {
+    res.status(500).json({ error: 'LINE login is not configured' })
+    return
+  }
+
+  // Only allow same-site relative paths so this can't be turned into an
+  // open-redirect to an attacker's domain.
+  const requested = typeof req.query.redirect === 'string' ? req.query.redirect : '/'
+  const redirectAfterLogin =
+    requested.startsWith('/') && !requested.startsWith('//') ? requested : '/'
+
+  const state = randomToken()
+  const nonce = randomToken()
+
+  setStateCookie(res, { state, redirectAfterLogin })
+
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id: CHANNEL_ID,
+    redirect_uri: LINE_LOGIN_REDIRECT_URI,
+    state,
+    scope: 'openid profile',
+    nonce,
+  })
+  res.redirect(`https://access.line.me/oauth2/v2.1/authorize?${params}`)
+})
+
+/**
+ * POST /api/auth/line/exchange { code, state }
+ * Frontend callback page hits this with the code+state from LINE. The state
+ * is checked against the HttpOnly cookie set in /line/start (the cookie is
+ * single-use: cleared regardless of outcome). On success we exchange the
+ * code for tokens and return the session along with the redirect target the
+ * server stashed in the cookie.
  */
 router.post(
   '/line/exchange',
-  async (req: Request<object, object, { code?: string; redirectUri?: string }>, res: Response) => {
-    const { code, redirectUri } = req.body
-    if (!code || !redirectUri) {
-      res.status(400).json({ error: 'code and redirectUri are required' })
+  async (req: Request<object, object, { code?: string; state?: string }>, res: Response) => {
+    const { code, state } = req.body
+    const stored = readStateCookie(req)
+    clearStateCookie(res)
+
+    if (!code || !state) {
+      res.status(400).json({ error: 'code and state are required' })
+      return
+    }
+    if (!stored) {
+      res.status(400).json({
+        error: 'Login session expired or missing. Please try logging in again.',
+      })
+      return
+    }
+    if (stored.state !== state) {
+      res.status(400).json({ error: 'State mismatch — possible CSRF.' })
       return
     }
 
     try {
-      const tokens = await exchangeCodeForTokens(code, redirectUri)
+      const tokens = await exchangeCodeForTokens(code, LINE_LOGIN_REDIRECT_URI)
       const claims = await verifyIdToken(tokens.id_token)
       const result = await resolveLineUser(claims)
-      res.json(result)
+      res.json({ ...result, redirectAfterLogin: stored.redirectAfterLogin })
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'LINE exchange failed'
       res.status(502).json({ error: msg })

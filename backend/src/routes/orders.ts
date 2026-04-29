@@ -11,6 +11,7 @@ import { renderQrDataUrl } from '../lib/promptPay'
 import { privateStorage, publicStorage } from '../lib/storage'
 import { imageUpload } from '../lib/upload'
 import { pushText } from '../lib/lineBot'
+import { pushPaymentProofToMerchant } from '../services/linePaymentReview'
 
 /**
  * How long we keep a payment-proof screenshot in object storage after its
@@ -305,6 +306,11 @@ router.post(
       }
       order.status = 'pending_verification'
       await order.save()
+
+      // Notify the merchant via LINE (best-effort; never blocks the response).
+      pushPaymentProofToMerchant(order).catch((err) =>
+        console.error('[orders] pushPaymentProofToMerchant failed:', err),
+      )
 
       res.json(order.toObject())
     } catch (err) {

@@ -12,6 +12,7 @@ import userRoutes from './routes/users'
 import emailRoutes from './routes/email'
 import merchantRoutes from './routes/merchant'
 import stripeWebhookRoutes from './routes/stripeWebhook'
+import agodaFoodLineWebhookRoutes from './routes/agodaFoodLineWebhook'
 import { isLocalStorage, LOCAL_UPLOAD_DIR, LOCAL_PUBLIC_PATH } from './lib/storage'
 
 const app = express()
@@ -29,9 +30,11 @@ if (!IS_PROD) {
   )
 }
 
-// Stripe webhook MUST be mounted before express.json() so the raw body is
-// preserved for signature verification. Placing it after would break HMAC checks.
+// Routes that need the raw body for HMAC signature verification MUST be
+// mounted before express.json(), which consumes the stream and makes the
+// raw bytes unavailable.
 app.use('/api/stripe', stripeWebhookRoutes)
+app.use('/api/line', agodaFoodLineWebhookRoutes)
 
 app.use(express.json())
 

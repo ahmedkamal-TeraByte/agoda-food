@@ -1,28 +1,64 @@
 import { Router, type Request, type Response } from 'express'
 import type { webhook } from '@line/bot-sdk'
 import { lineWebhookMiddleware } from '../lib/lineBot'
-import { parseTextMessage } from '../lib/linePostback'
+import { parseTextMessage, parsePostback } from '../lib/linePostback'
 import { handleMyActiveOrders } from '../services/lineActiveOrders'
+import { handleApprovePayment } from '../services/linePaymentReview'
 
 const router = Router()
 
 // ─── Event dispatcher ────────────────────────────────────────────────────────
 
 async function handleEvent(event: webhook.Event): Promise<void> {
-  // Only handle text message events (sent by rich-menu text actions)
-  if (event.type !== 'message' || event.message.type !== 'text') return
+  if (event.type === 'message' && event.message.type === 'text') {
+    await handleTextMessage(event, event.message.text)
+    return
+  }
+  if (event.type === 'postback') {
+    await handlePostback(event)
+    return
+  }
+}
 
+async function handleTextMessage(
+  event: webhook.MessageEvent,
+  text: string,
+): Promise<void> {
   const lineUserId = event.source?.userId
   const replyToken = event.replyToken
   if (!lineUserId || !replyToken) return
 
-  const parsed = parseTextMessage(event.message.text)
+  const parsed = parseTextMessage(text)
   if (!parsed) {
-    console.debug('[lineWebhook] unrecognised text message, skipping:', event.message.text)
+    console.debug('[lineWebhook] unrecognised text message, skipping:', text)
     return
   }
 
   switch (parsed.action) {
+    case 'MY_ACTIVE_ORDERS':
+      await handleMyActiveOrders({ lineUserId, replyToken })
+      return
+    // Other actions (e.g. APPROVE_PAYMENT) only arrive via postback, never text.
+    default:
+      return
+  }
+}
+
+async function handlePostback(event: webhook.PostbackEvent): Promise<void> {
+  const lineUserId = event.source?.userId
+  const replyToken = event.replyToken
+  if (!lineUserId || !replyToken) return
+
+  const parsed = parsePostback(event.postback.data)
+  if (!parsed) {
+    console.debug('[lineWebhook] unknown postback, skipping:', event.postback.data)
+    return
+  }
+
+  switch (parsed.action) {
+    case 'APPROVE_PAYMENT':
+      await handleApprovePayment({ orderId: parsed.orderId, lineUserId, replyToken })
+      return
     case 'MY_ACTIVE_ORDERS':
       await handleMyActiveOrders({ lineUserId, replyToken })
       return

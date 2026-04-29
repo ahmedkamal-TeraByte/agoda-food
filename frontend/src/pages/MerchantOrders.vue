@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { useRoute } from 'vue-router'
 import AppHeader from '../components/AppHeader.vue'
 import MerchantTabs from '../components/MerchantTabs.vue'
 import MerchantOrderCard from '../components/MerchantOrderCard.vue'
@@ -16,6 +17,8 @@ import {
 } from '../services/api'
 import { isInLineClient } from '../lib/liff'
 import type { Order, PaymentProofView, Restaurant } from '../data/types'
+
+const route = useRoute()
 
 const orders = ref<Order[]>([])
 const loading = ref(true)
@@ -102,6 +105,17 @@ async function loadOrders() {
     error.value = e instanceof Error ? e.message : 'Failed to load orders'
   } finally {
     loading.value = false
+  }
+
+  // Deep link from a LINE flex-message "Reject" button — auto-open the review
+  // modal for that specific order so the merchant lands directly on the
+  // radio-button + reason flow.
+  const deepLinkOrderId = route.query.reviewOrderId
+  if (typeof deepLinkOrderId === 'string' && deepLinkOrderId) {
+    const target = orders.value.find((o) => o.id === deepLinkOrderId)
+    if (target && target.status === 'pending_verification') {
+      openReview(target)
+    }
   }
 }
 

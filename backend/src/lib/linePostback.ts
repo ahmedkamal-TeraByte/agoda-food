@@ -6,6 +6,7 @@ import { z } from 'zod'
  */
 export const PostbackData = z.discriminatedUnion('action', [
   z.object({ action: z.literal('MY_ACTIVE_ORDERS') }),
+  z.object({ action: z.literal('APPROVE_PAYMENT'), orderId: z.string() }),
 ])
 
 export type PostbackData = z.infer<typeof PostbackData>
@@ -27,14 +28,19 @@ export function parsePostback(raw: string): PostbackData | null {
  * Maps a plain text message (sent by a rich-menu text action) to a typed action.
  * Comparison is case-insensitive and trims whitespace so button label casing
  * doesn't matter.
+ *
+ * Only payload-free actions are reachable via text — actions that require
+ * additional fields (like APPROVE_PAYMENT.orderId) must come through postback.
  * Returns null for unrecognised text so the webhook skips it silently.
  */
-const TEXT_ACTION_MAP: Record<string, PostbackData['action']> = {
+type TextAction = Extract<PostbackData, { action: 'MY_ACTIVE_ORDERS' }>
+
+const TEXT_ACTION_MAP: Record<string, TextAction['action']> = {
   'my active orders': 'MY_ACTIVE_ORDERS',
   'my orders': 'MY_ACTIVE_ORDERS',
 }
 
-export function parseTextMessage(text: string): PostbackData | null {
+export function parseTextMessage(text: string): TextAction | null {
   const action = TEXT_ACTION_MAP[text.toLowerCase().trim()]
   if (!action) return null
   return { action }

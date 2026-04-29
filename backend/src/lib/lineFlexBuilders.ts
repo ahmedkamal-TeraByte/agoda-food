@@ -233,6 +233,131 @@ export function buildMerchantOrderBubble(
   }
 }
 
+// ─── Payment proof review bubble ─────────────────────────────────────────────
+
+export interface PaymentProofReviewInput {
+  orderShortId: string
+  customerName: string
+  itemSummary: string
+  total: number
+  imageUrl: string
+  approvePostbackData: string
+  liffUrl: string
+}
+
+export function buildPaymentProofReviewBubble(input: PaymentProofReviewInput): FlexBubble {
+  const {
+    orderShortId,
+    customerName,
+    itemSummary,
+    total,
+    imageUrl,
+    approvePostbackData,
+    liffUrl,
+  } = input
+
+  return {
+    type: 'bubble',
+    size: 'mega',
+    hero: {
+      type: 'image',
+      url: imageUrl,
+      size: 'full',
+      aspectRatio: '4:5',
+      aspectMode: 'cover',
+      action: {
+        type: 'uri',
+        label: 'View full image',
+        uri: imageUrl,
+      },
+    },
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      spacing: 'sm',
+      paddingAll: '14px',
+      contents: [
+        {
+          type: 'text',
+          text: `New payment for #${orderShortId}`,
+          weight: 'bold',
+          size: 'md',
+          color: '#111827',
+        },
+        {
+          type: 'text',
+          text: `From ${customerName}`,
+          size: 'xs',
+          color: '#6b7280',
+        },
+        { type: 'separator', margin: 'md' },
+        {
+          type: 'text',
+          text: itemSummary,
+          wrap: true,
+          size: 'sm',
+          color: '#374151',
+          margin: 'md',
+        },
+        {
+          type: 'box',
+          layout: 'horizontal',
+          margin: 'md',
+          contents: [
+            {
+              type: 'text',
+              text: 'Total',
+              weight: 'bold',
+              size: 'sm',
+              color: '#111827',
+              flex: 1,
+            },
+            {
+              type: 'text',
+              text: `฿${total}`,
+              weight: 'bold',
+              size: 'sm',
+              color: '#f97316',
+              align: 'end',
+              flex: 0,
+            },
+          ],
+        },
+      ],
+    },
+    footer: {
+      type: 'box',
+      layout: 'horizontal',
+      spacing: 'sm',
+      paddingAll: '12px',
+      contents: [
+        {
+          type: 'button',
+          style: 'secondary',
+          height: 'sm',
+          action: {
+            type: 'uri',
+            label: 'Reject',
+            uri: liffUrl,
+          },
+        },
+        {
+          type: 'button',
+          style: 'primary',
+          height: 'sm',
+          color: '#16a34a',
+          action: {
+            type: 'postback',
+            label: 'Approve',
+            data: approvePostbackData,
+            displayText: 'Approving payment…',
+          },
+        },
+      ],
+    },
+  }
+}
+
 // ─── Carousel wrapper ────────────────────────────────────────────────────────
 
 /** Wraps a list of bubbles into a carousel, or returns the single bubble directly. */

@@ -1,9 +1,18 @@
 /**
  * LINE Flex Message bubble builders.
  *
- * Colors mirror the Tailwind classes used in MerchantOrderCard.vue so the
- * bot and the dashboard feel consistent.
+ * All return types come from @line/bot-sdk so misspellings (e.g. paddingStart
+ * vs paddingLeft) get caught at compile time. Colors mirror the Tailwind
+ * classes used in MerchantOrderCard.vue so the bot and the dashboard feel
+ * consistent.
  */
+
+import type { messagingApi } from '@line/bot-sdk'
+
+type FlexBubble = messagingApi.FlexBubble
+type FlexBox = messagingApi.FlexBox
+type FlexComponent = messagingApi.FlexComponent
+type FlexContainer = messagingApi.FlexContainer
 
 export interface OrderSummary {
   id: string
@@ -39,7 +48,7 @@ const STATUS_COLORS: Record<string, string> = {
   cancelled: '#dc2626', // red-600
 }
 
-function statusPill(status: string): object {
+function statusPill(status: string): FlexBox {
   return {
     type: 'box',
     layout: 'vertical',
@@ -63,7 +72,7 @@ function statusPill(status: string): object {
 
 // ─── Shared header ───────────────────────────────────────────────────────────
 
-function orderHeader(orderId: string, status: string): object {
+function orderHeader(orderId: string, status: string): FlexBox {
   return {
     type: 'box',
     layout: 'horizontal',
@@ -86,7 +95,7 @@ function orderHeader(orderId: string, status: string): object {
 
 // ─── Item list rows ──────────────────────────────────────────────────────────
 
-function itemRow(item: OrderSummary['items'][number]): object {
+function itemRow(item: OrderSummary['items'][number]): FlexBox {
   return {
     type: 'box',
     layout: 'horizontal',
@@ -111,7 +120,7 @@ function itemRow(item: OrderSummary['items'][number]): object {
   }
 }
 
-function totalRow(total: number): object {
+function totalRow(total: number): FlexBox {
   return {
     type: 'box',
     layout: 'horizontal',
@@ -133,7 +142,7 @@ function totalRow(total: number): object {
 
 // ─── Customer bubble ─────────────────────────────────────────────────────────
 
-export function buildCustomerOrderBubble(order: OrderSummary): object {
+export function buildCustomerOrderBubble(order: OrderSummary): FlexBubble {
   return {
     type: 'bubble',
     size: 'kilo',
@@ -166,8 +175,8 @@ export function buildCustomerOrderBubble(order: OrderSummary): object {
 export function buildMerchantOrderBubble(
   order: OrderSummary,
   customerName: string,
-): object {
-  const bodyContents: object[] = [
+): FlexBubble {
+  const bodyContents: FlexComponent[] = [
     {
       type: 'box',
       layout: 'horizontal',
@@ -227,7 +236,7 @@ export function buildMerchantOrderBubble(
 // ─── Carousel wrapper ────────────────────────────────────────────────────────
 
 /** Wraps a list of bubbles into a carousel, or returns the single bubble directly. */
-export function bubblesOrCarousel(bubbles: object[]): object {
+export function bubblesOrCarousel(bubbles: FlexBubble[]): FlexContainer {
   if (bubbles.length === 1) return bubbles[0]!
   return { type: 'carousel', contents: bubbles }
 }

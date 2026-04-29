@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import express, { type Request, type Response } from 'express'
 import crypto from 'crypto'
-import { parsePostback } from '../lib/linePostback'
+import { parseTextMessage } from '../lib/linePostback'
 import { handleMyActiveOrders } from '../services/lineActiveOrders'
 
 const router = Router()
@@ -21,18 +21,11 @@ interface LineEventSource {
   userId?: string
 }
 
-interface LinePostbackEvent {
-  type: 'postback'
-  replyToken: string
-  source?: LineEventSource
-  postback: { data: string; params?: Record<string, string> }
-}
-
 interface LineEvent {
   type: string
   replyToken?: string
   source?: LineEventSource
-  postback?: { data: string; params?: Record<string, string> }
+  message?: { type: string; id: string; text?: string }
 }
 
 interface LineWebhookBody {
@@ -57,18 +50,17 @@ function verifySignature(rawBody: Buffer, signature: string): boolean {
 // ─── Event dispatcher ────────────────────────────────────────────────────────
 
 async function handleEvent(event: LineEvent): Promise<void> {
-  // Phase 1: postback events only
-  if (event.type !== 'postback') return
+  // Only handle text message events (sent by rich-menu text actions)
+  if (event.type !== 'message' || event.message?.type !== 'text') return
 
   const lineUserId = event.source?.userId
   const replyToken = event.replyToken
   if (!lineUserId || !replyToken) return
 
-  // Type-narrow to postback event
-  const postbackEvent = event as LinePostbackEvent
-  const parsed = parsePostback(postbackEvent.postback.data)
+  const text = event.message.text ?? ''
+  const parsed = parseTextMessage(text)
   if (!parsed) {
-    console.debug('[lineWebhook] unknown postback action, skipping:', postbackEvent.postback.data)
+    console.debug('[lineWebhook] unrecognised text message, skipping:', text)
     return
   }
 

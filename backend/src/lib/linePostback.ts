@@ -22,3 +22,20 @@ export function parsePostback(raw: string): PostbackData | null {
     return null
   }
 }
+
+/**
+ * Maps a plain text message (sent by a rich-menu text action) to a typed action.
+ * Comparison is case-insensitive and trims whitespace so button label casing
+ * doesn't matter.
+ * Returns null for unrecognised text so the webhook skips it silently.
+ */
+const TEXT_ACTION_MAP: Record<string, PostbackData['action']> = {
+  'my active orders': 'MY_ACTIVE_ORDERS',
+  'my orders': 'MY_ACTIVE_ORDERS',
+}
+
+export function parseTextMessage(text: string): PostbackData | null {
+  const action = TEXT_ACTION_MAP[text.toLowerCase().trim()]
+  if (!action) return null
+  return { action }
+}

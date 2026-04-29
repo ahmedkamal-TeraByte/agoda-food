@@ -4,13 +4,11 @@ import { User } from '../models/User'
 import { Payment } from '../models/Payment'
 import { privateStorage } from '../lib/storage'
 import { pushFlex, replyText } from '../lib/lineBot'
-import { buildPaymentProofReviewBubble } from '../lib/lineFlexBuilders'
+import { buildOrderDetailsBubble, type OrderActionButton } from '../lib/lineFlexBuilders'
+import { buildMerchantOrderLiffUrl } from '../lib/lineLiff'
 
 const SIGNED_URL_TTL_SECONDS = 24 * 60 * 60 // 24h — long enough for a merchant to react
 const PROOF_FILE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
-
-const LIFF_ID = process.env.LIFF_ID ?? ''
-const PUBLIC_APP_URL = process.env.PUBLIC_APP_URL ?? ''
 
 // ─── Push payment proof to merchant ──────────────────────────────────────────
 
@@ -30,35 +28,48 @@ export async function pushPaymentProofToMerchant(order: IOrder): Promise<void> {
   const owner = await User.findById(restaurant.ownerUserId).select('lineUserId').lean()
   if (!owner?.lineUserId) return
 
-  const customer = await User.findById(order.userId).select('displayName').lean()
-  const customerName = customer?.displayName ?? 'Guest'
-
   const signedUrl = await privateStorage.getSignedUrl(
     order.paymentProof.fileKey,
     SIGNED_URL_TTL_SECONDS,
   )
 
-  const orderShortId = (order._id as { toString(): string }).toString().slice(-6).toUpperCase()
-  const itemSummary = summariseItems(order.items)
+  const orderId = (order._id as { toString(): string }).toString()
+  const orderShortId = orderId.slice(-6).toUpperCase()
 
-  const liffUrl = buildReviewLiffUrl(order._id as { toString(): string })
+  const actions: OrderActionButton[] = [
+    {
+      kind: 'uri',
+      label: 'Reject',
+      style: 'secondary',
+      uri: buildMerchantOrderLiffUrl(orderId),
+    },
+    {
+      kind: 'postback',
+      label: 'Approve',
+      style: 'primary',
+      color: '#16a34a',
+      data: JSON.stringify({ action: 'APPROVE_PAYMENT', orderId }),
+      displayText: 'Approving payment…',
+    },
+  ]
 
-  const bubble = buildPaymentProofReviewBubble({
+  const bubble = buildOrderDetailsBubble({
     orderShortId,
-    customerName,
-    itemSummary,
+    status: order.status,
+    items: order.items.map((i) => ({
+      name: i.name,
+      quantity: i.quantity,
+      price: i.price,
+      note: i.note,
+    })),
     total: order.total,
     imageUrl: signedUrl,
-    approvePostbackData: JSON.stringify({
-      action: 'APPROVE_PAYMENT',
-      orderId: (order._id as { toString(): string }).toString(),
-    }),
-    liffUrl,
+    actions,
   })
 
   await pushFlex(
     owner.lineUserId,
-    `Payment proof — Order #${orderShortId}`,
+    `New order #${orderShortId} — payment awaiting approval`,
     bubble,
   )
 }
@@ -139,29 +150,4 @@ export async function handleApprovePayment({
 
   const orderShortId = (order._id as { toString(): string }).toString().slice(-6).toUpperCase()
   await replyText(replyToken, `Payment approved for Order #${orderShortId}.`)
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function summariseItems(items: IOrder['items']): string {
-  if (!items || items.length === 0) return ''
-  const first = items[0]!
-  const head = `${first.name} × ${first.quantity}`
-  return items.length > 1 ? `${head} + ${items.length - 1} more` : head
-}
-
-/**
- * Builds a deep-link URL into the merchant dashboard's review-payment modal.
- * Prefers a LIFF URL (opens inside LINE) when LIFF_ID is set, otherwise falls
- * back to PUBLIC_APP_URL, otherwise a generic LINE landing page.
- */
-function buildReviewLiffUrl(orderId: { toString(): string }): string {
-  const id = orderId.toString()
-  if (LIFF_ID) {
-    return `https://liff.line.me/${LIFF_ID}/merchant?reviewOrderId=${id}`
-  }
-  if (PUBLIC_APP_URL) {
-    return `${PUBLIC_APP_URL.replace(/\/$/, '')}/merchant?reviewOrderId=${id}`
-  }
-  return 'https://line.me'
 }

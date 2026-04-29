@@ -7,6 +7,7 @@ import { z } from 'zod'
 export const PostbackData = z.discriminatedUnion('action', [
   z.object({ action: z.literal('MY_ACTIVE_ORDERS') }),
   z.object({ action: z.literal('APPROVE_PAYMENT'), orderId: z.string() }),
+  z.object({ action: z.literal('ORDER_DETAILS'), orderId: z.string() }),
 ])
 
 export type PostbackData = z.infer<typeof PostbackData>

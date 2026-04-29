@@ -155,12 +155,14 @@ function orderToSummary(o: {
   _id: Types.ObjectId
   restaurantName: string
   status: string
-  items: { name: string; quantity: number; price: number }[]
+  items: { name: string; quantity: number; price: number; note?: string }[]
   total: number
   serviceDate?: Date
 }): OrderSummary {
+  const mongoId = o._id.toString()
   return {
-    id: o._id.toString().slice(-6).toUpperCase(),
+    id: mongoId.slice(-6).toUpperCase(),
+    mongoId,
     restaurantName: o.restaurantName,
     status: o.status,
     items: o.items,

@@ -15,10 +15,13 @@ type FlexComponent = messagingApi.FlexComponent
 type FlexContainer = messagingApi.FlexContainer
 
 export interface OrderSummary {
+  /** Display-only short id (last 6 chars of the Mongo ObjectId, uppercase). */
   id: string
+  /** Full Mongo ObjectId — used as the postback orderId. */
+  mongoId: string
   restaurantName: string
   status: string
-  items: { name: string; quantity: number; price: number }[]
+  items: { name: string; quantity: number; price: number; note?: string }[]
   total: number
   serviceDate?: Date | null
 }
@@ -96,7 +99,7 @@ function orderHeader(orderId: string, status: string): FlexBox {
 // ─── Item list rows ──────────────────────────────────────────────────────────
 
 function itemRow(item: OrderSummary['items'][number]): FlexBox {
-  return {
+  const line: FlexBox = {
     type: 'box',
     layout: 'horizontal',
     contents: [
@@ -115,6 +118,26 @@ function itemRow(item: OrderSummary['items'][number]): FlexBox {
         color: '#6b7280',
         align: 'end',
         flex: 0,
+      },
+    ],
+  }
+
+  const note = item.note?.trim()
+  if (!note) return line
+
+  return {
+    type: 'box',
+    layout: 'vertical',
+    spacing: 'xs',
+    contents: [
+      line,
+      {
+        type: 'text',
+        text: `Note: ${note}`,
+        size: 'xs',
+        color: '#b45309',
+        wrap: true,
+        margin: 'xs',
       },
     ],
   }
@@ -230,131 +253,160 @@ export function buildMerchantOrderBubble(
       paddingAll: '12px',
       contents: bodyContents,
     },
-  }
-}
-
-// ─── Payment proof review bubble ─────────────────────────────────────────────
-
-export interface PaymentProofReviewInput {
-  orderShortId: string
-  customerName: string
-  itemSummary: string
-  total: number
-  imageUrl: string
-  approvePostbackData: string
-  liffUrl: string
-}
-
-export function buildPaymentProofReviewBubble(input: PaymentProofReviewInput): FlexBubble {
-  const {
-    orderShortId,
-    customerName,
-    itemSummary,
-    total,
-    imageUrl,
-    approvePostbackData,
-    liffUrl,
-  } = input
-
-  return {
-    type: 'bubble',
-    size: 'mega',
-    hero: {
-      type: 'image',
-      url: imageUrl,
-      size: 'full',
-      aspectRatio: '4:5',
-      aspectMode: 'cover',
-      action: {
-        type: 'uri',
-        label: 'View full image',
-        uri: imageUrl,
-      },
-    },
-    body: {
-      type: 'box',
-      layout: 'vertical',
-      spacing: 'sm',
-      paddingAll: '14px',
-      contents: [
-        {
-          type: 'text',
-          text: `New payment for #${orderShortId}`,
-          weight: 'bold',
-          size: 'md',
-          color: '#111827',
-        },
-        {
-          type: 'text',
-          text: `From ${customerName}`,
-          size: 'xs',
-          color: '#6b7280',
-        },
-        { type: 'separator', margin: 'md' },
-        {
-          type: 'text',
-          text: itemSummary,
-          wrap: true,
-          size: 'sm',
-          color: '#374151',
-          margin: 'md',
-        },
-        {
-          type: 'box',
-          layout: 'horizontal',
-          margin: 'md',
-          contents: [
-            {
-              type: 'text',
-              text: 'Total',
-              weight: 'bold',
-              size: 'sm',
-              color: '#111827',
-              flex: 1,
-            },
-            {
-              type: 'text',
-              text: `฿${total}`,
-              weight: 'bold',
-              size: 'sm',
-              color: '#f97316',
-              align: 'end',
-              flex: 0,
-            },
-          ],
-        },
-      ],
-    },
     footer: {
       type: 'box',
       layout: 'horizontal',
-      spacing: 'sm',
-      paddingAll: '12px',
+      paddingAll: '8px',
       contents: [
         {
           type: 'button',
           style: 'secondary',
           height: 'sm',
           action: {
-            type: 'uri',
-            label: 'Reject',
-            uri: liffUrl,
-          },
-        },
-        {
-          type: 'button',
-          style: 'primary',
-          height: 'sm',
-          color: '#16a34a',
-          action: {
             type: 'postback',
-            label: 'Approve',
-            data: approvePostbackData,
-            displayText: 'Approving payment…',
+            label: 'Details',
+            data: JSON.stringify({ action: 'ORDER_DETAILS', orderId: order.mongoId }),
+            displayText: 'Loading order details…',
           },
         },
       ],
     },
+    styles: {
+      footer: { separator: true, separatorColor: '#e5e7eb' },
+    },
+  }
+}
+
+// ─── Order details bubble (reusable) ─────────────────────────────────────────
+
+/**
+ * Discriminated union of footer button shapes accepted by buildOrderDetailsBubble.
+ * Lets callers compose any combination of postback / URI buttons without
+ * leaking flex-message internals into service code.
+ */
+export type OrderActionButton =
+  | {
+      label: string
+      kind: 'postback'
+      data: string
+      displayText?: string
+      style?: 'primary' | 'secondary'
+      color?: string
+    }
+  | {
+      label: string
+      kind: 'uri'
+      uri: string
+      style?: 'primary' | 'secondary'
+      color?: string
+    }
+
+export interface OrderDetailsInput {
+  orderShortId: string
+  status: string
+  items: OrderSummary['items']
+  total: number
+  /** When present, rendered as a tap-to-zoom hero image at the top. */
+  imageUrl?: string
+  /** Footer buttons; omit / pass [] for a button-less bubble. */
+  actions?: OrderActionButton[]
+}
+
+/**
+ * Reusable bubble for any "show me an order" intent — used by both the
+ * payment-proof push (with proof image + Reject/Approve buttons) and the
+ * "Details" postback handler from the active-orders carousel.
+ */
+export function buildOrderDetailsBubble(input: OrderDetailsInput): FlexBubble {
+  const { orderShortId, status, items, total, imageUrl, actions = [] } = input
+
+  const bodyContents: FlexComponent[] = []
+
+  // Friendly amber sub-line when a payment is awaiting approval — implicit
+  // call-to-action above the Reject/Approve buttons.
+  if (status === 'pending_verification') {
+    bodyContents.push({
+      type: 'text',
+      text: 'Customer has paid — awaiting your approval',
+      size: 'xs',
+      color: '#d97706',
+      wrap: true,
+    })
+  }
+
+  bodyContents.push(
+    { type: 'separator', margin: 'md' },
+    {
+      type: 'box',
+      layout: 'vertical',
+      spacing: 'sm',
+      margin: 'md',
+      contents: items.map(itemRow),
+    },
+    { type: 'separator', margin: 'md' },
+    totalRow(total),
+  )
+
+  const bubble: FlexBubble = {
+    type: 'bubble',
+    size: 'mega',
+    header: orderHeader(orderShortId, status),
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      spacing: 'sm',
+      paddingAll: '14px',
+      contents: bodyContents,
+    },
+    styles: {
+      body: { separator: true, separatorColor: '#e5e7eb' },
+    },
+  }
+
+  if (imageUrl) {
+    bubble.hero = {
+      type: 'image',
+      url: imageUrl,
+      size: 'full',
+      aspectRatio: '4:5',
+      aspectMode: 'cover',
+      action: { type: 'uri', label: 'View full image', uri: imageUrl },
+    }
+  }
+
+  if (actions.length > 0) {
+    bubble.footer = {
+      type: 'box',
+      layout: 'horizontal',
+      spacing: 'sm',
+      paddingAll: '12px',
+      contents: actions.map(toFlexButton),
+    }
+    bubble.styles = {
+      ...bubble.styles,
+      footer: { separator: true, separatorColor: '#e5e7eb' },
+    }
+  }
+
+  return bubble
+}
+
+function toFlexButton(a: OrderActionButton): FlexComponent {
+  const base = {
+    type: 'button' as const,
+    style: a.style ?? 'primary',
+    height: 'sm' as const,
+    ...(a.color ? { color: a.color } : {}),
+  }
+  if (a.kind === 'postback') {
+    return {
+      ...base,
+      action: { type: 'postback', label: a.label, data: a.data, displayText: a.displayText },
+    }
+  }
+  return {
+    ...base,
+    action: { type: 'uri', label: a.label, uri: a.uri },
   }
 }
 

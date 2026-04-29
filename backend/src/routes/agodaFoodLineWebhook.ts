@@ -4,6 +4,7 @@ import { lineWebhookMiddleware } from '../lib/lineBot'
 import { parseTextMessage, parsePostback } from '../lib/linePostback'
 import { handleMyActiveOrders } from '../services/lineActiveOrders'
 import { handleApprovePayment } from '../services/linePaymentReview'
+import { handleOrderDetails } from '../services/lineOrderDetails'
 
 const router = Router()
 
@@ -58,6 +59,9 @@ async function handlePostback(event: webhook.PostbackEvent): Promise<void> {
   switch (parsed.action) {
     case 'APPROVE_PAYMENT':
       await handleApprovePayment({ orderId: parsed.orderId, lineUserId, replyToken })
+      return
+    case 'ORDER_DETAILS':
+      await handleOrderDetails({ orderId: parsed.orderId, lineUserId, replyToken })
       return
     case 'MY_ACTIVE_ORDERS':
       await handleMyActiveOrders({ lineUserId, replyToken })

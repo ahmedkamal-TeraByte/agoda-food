@@ -29,8 +29,9 @@ class AppConfig {
 
     if (missing.length) {
       throw new Error(
-        `[AppConfig] Missing required keys in DB: ${missing.join(', ')}.\n` +
-          `Run: npm run seed:config -w @agoda-food/backend`,
+        `[AppConfig] Missing required keys in the "app_config" Mongo collection: ${missing.join(', ')}.\n` +
+          `Insert them via mongo shell, e.g.:\n` +
+          `  db.app_config.insertOne({ key: "JWT_SECRET", value: "...", isSecret: true })`,
       )
     }
 

@@ -4,9 +4,9 @@
  */
 import 'dotenv/config'
 import mongoose from 'mongoose'
-import { Restaurant } from './models/Restaurant'
-import { MenuItem, type MenuItemTag } from './models/MenuItem'
-import { User } from './models/User'
+import { Restaurant } from '@models/Restaurant'
+import { MenuItem, type MenuItemTag } from '@models/MenuItem'
+import { User } from '@models/User'
 
 const MONGODB_URI = process.env.MONGODB_URI ?? 'mongodb://localhost:27017/agoda-food'
 

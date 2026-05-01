@@ -1,13 +1,13 @@
-import { Order } from '../models/Order'
-import { Restaurant } from '../models/Restaurant'
-import { User } from '../models/User'
-import { privateStorage } from '../lib/storage'
-import { replyText, replyFlex } from '../lib/lineBot'
+import { Order } from '@models/Order'
+import { Restaurant } from '@models/Restaurant'
+import { User } from '@models/User'
+import { getPrivateStorage } from '@lib/storage'
+import { replyText, replyFlex } from '@lib/lineBot'
 import {
   buildOrderDetailsBubble,
   type OrderActionButton,
-} from '../lib/lineFlexBuilders'
-import { buildMerchantOrderLiffUrl } from '../lib/lineLiff'
+} from '@lib/lineFlexBuilders'
+import { buildMerchantOrderLiffUrl } from '@lib/lineLiff'
 
 const SIGNED_URL_TTL_SECONDS = 24 * 60 * 60
 
@@ -59,7 +59,7 @@ export async function handleOrderDetails({
   // visual reference even after the payment has been approved.
   let imageUrl: string | undefined
   if (order.paymentProof?.fileKey) {
-    imageUrl = await privateStorage.getSignedUrl(
+    imageUrl = await getPrivateStorage().getSignedUrl(
       order.paymentProof.fileKey,
       SIGNED_URL_TTL_SECONDS,
     )

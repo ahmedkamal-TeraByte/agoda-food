@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express'
-import { User, IUser } from '../models/User'
-import { Restaurant } from '../models/Restaurant'
-import { verifySession } from '../lib/jwt'
+import { User, IUser } from '@models/User'
+import { Restaurant } from '@models/Restaurant'
+import { verifySession } from '@lib/jwt'
 
 declare global {
   namespace Express {

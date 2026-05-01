@@ -1,19 +1,19 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { randomUUID } from "crypto";
 import sharp from "sharp";
-import { Restaurant } from "../models/Restaurant";
-import { MenuItem } from "../models/MenuItem";
-import { Order } from "../models/Order";
-import { Payment } from "../models/Payment";
-import { requireMerchant } from "../middleware/auth";
-import { getServiceDate } from "../lib/orderWindow";
+import { Restaurant } from "@models/Restaurant";
+import { MenuItem } from "@models/MenuItem";
+import { Order } from "@models/Order";
+import { Payment } from "@models/Payment";
+import { requireMerchant } from "@middleware/auth";
+import { getServiceDate } from "@lib/orderWindow";
 import {
   decodeQrFromImage,
   isPromptPayPayload,
   renderQrDataUrl,
-} from "../lib/promptPay";
-import { privateStorage, publicStorage } from "../lib/storage";
-import { imageUpload } from "../lib/upload";
+} from "@lib/promptPay";
+import { getPrivateStorage, getPublicStorage } from "@lib/storage";
+import { imageUpload } from "@lib/upload";
 
 /**
  * Retention window for payment-proof files after their lifecycle terminates
@@ -91,7 +91,7 @@ router.patch("/restaurant", async (req: Request, res: Response) => {
 function serializeMenuItem(item: InstanceType<typeof MenuItem>) {
   const obj = item.toObject() as unknown as Record<string, unknown>;
   obj.imageUrl = obj.imageKey
-    ? publicStorage.publicUrl(obj.imageKey as string)
+    ? getPublicStorage().publicUrl(obj.imageKey as string)
     : undefined;
   return obj;
 }
@@ -542,7 +542,7 @@ router.get("/orders/:id/payment-proof", async (req: Request, res: Response) => {
       res.status(404).json({ error: "No payment proof on this order" });
       return;
     }
-    const signedUrl = await privateStorage.getSignedUrl(
+    const signedUrl = await getPrivateStorage().getSignedUrl(
       order.paymentProof.fileKey,
       SIGNED_URL_TTL_SECONDS,
     );
@@ -752,13 +752,13 @@ router.post(
         .toBuffer();
 
       const fileKey = `${prefix}${restaurant._id}/${randomUUID()}.jpg`;
-      await publicStorage.put(fileKey, processed, "image/jpeg");
+      await getPublicStorage().put(fileKey, processed, "image/jpeg");
 
       // Stable absolute URL the browser fetches directly from R2 (or the
       // local-fs static handler in dev). For Restaurant.imageUrl / .logoUrl the
       // caller persists this URL directly. For MenuItem the caller persists only
       // `fileKey` (as `imageKey`) and the server reconstructs the URL on read.
-      const imageUrl = publicStorage.publicUrl(fileKey);
+      const imageUrl = getPublicStorage().publicUrl(fileKey);
       res.json({ imageUrl, fileKey, sizeBytes: processed.length });
     } catch (err) {
       console.error("[merchant] uploads/image failed:", err);

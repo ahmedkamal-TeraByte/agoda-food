@@ -1,13 +1,12 @@
 import { Router, Request, Response } from 'express'
 import crypto from 'crypto'
-import { User, IUser } from '../models/User'
-import { exchangeCodeForTokens, verifyIdToken, LineClaims } from '../lib/line'
-import { signSession } from '../lib/jwt'
+import { User, IUser } from '@models/User'
+import { exchangeCodeForTokens, verifyIdToken, LineClaims } from '@lib/line'
+import { signSession } from '@lib/jwt'
+import { config } from '@config/AppConfig'
 
 const router = Router()
 
-const CHANNEL_ID = process.env.LINE_CHANNEL_ID ?? ''
-const LINE_LOGIN_REDIRECT_URI = process.env.LINE_LOGIN_REDIRECT_URI ?? ''
 const IS_PROD = process.env.NODE_ENV === 'production'
 
 // HttpOnly cookie that holds the OAuth `state` (CSRF token) plus where to send
@@ -119,7 +118,9 @@ async function resolveLineUser(claims: LineClaims): Promise<AuthResponse> {
  * callback wipes per-tab storage.
  */
 router.get('/line/start', (req: Request, res: Response) => {
-  if (!CHANNEL_ID || !LINE_LOGIN_REDIRECT_URI) {
+  const { channelId, redirectUri } = config.line()
+
+  if (!channelId || !redirectUri) {
     res.status(500).json({ error: 'LINE login is not configured' })
     return
   }
@@ -137,8 +138,8 @@ router.get('/line/start', (req: Request, res: Response) => {
 
   const params = new URLSearchParams({
     response_type: 'code',
-    client_id: CHANNEL_ID,
-    redirect_uri: LINE_LOGIN_REDIRECT_URI,
+    client_id: channelId,
+    redirect_uri: redirectUri,
     state,
     scope: 'openid profile',
     nonce,
@@ -177,7 +178,7 @@ router.post(
     }
 
     try {
-      const tokens = await exchangeCodeForTokens(code, LINE_LOGIN_REDIRECT_URI)
+      const tokens = await exchangeCodeForTokens(code, config.line().redirectUri)
       const claims = await verifyIdToken(tokens.id_token)
       const result = await resolveLineUser(claims)
       res.json({ ...result, redirectAfterLogin: stored.redirectAfterLogin })

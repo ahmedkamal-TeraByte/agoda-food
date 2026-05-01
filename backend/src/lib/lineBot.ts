@@ -14,19 +14,19 @@ import {
   SignatureValidationFailed,
 } from '@line/bot-sdk'
 import type { RequestHandler } from 'express'
+import { config } from '@config/AppConfig'
 
-const channelAccessToken = process.env.LINE_MESSAGING_ACCESS_TOKEN ?? ''
-const channelSecret = process.env.LINE_MESSAGING_CHANNEL_SECRET ?? ''
+// ─── Lazy client ─────────────────────────────────────────────────────────────
 
-if (!channelSecret) {
-  console.warn(
-    '[lineBot] LINE_MESSAGING_CHANNEL_SECRET is not set — inbound webhook requests will be rejected (401).',
-  )
+let cachedClient: messagingApi.MessagingApiClient | null = null
+
+function getLineClient(): messagingApi.MessagingApiClient | null {
+  if (cachedClient !== undefined && cachedClient !== null) return cachedClient
+  const { accessToken } = config.lineMessaging()
+  if (!accessToken) return null
+  cachedClient = new messagingApi.MessagingApiClient({ channelAccessToken: accessToken })
+  return cachedClient
 }
-
-const lineClient: messagingApi.MessagingApiClient | null = channelAccessToken
-  ? new messagingApi.MessagingApiClient({ channelAccessToken })
-  : null
 
 // ─── Webhook middleware ──────────────────────────────────────────────────────
 
@@ -36,35 +36,48 @@ const lineClient: messagingApi.MessagingApiClient | null = channelAccessToken
  *
  * MUST be mounted before app.use(express.json()) so the SDK can read the raw
  * body itself.
+ *
+ * The middleware is built lazily on first request so config is available.
  */
+let cachedMiddleware: RequestHandler | null = null
+
 export function lineWebhookMiddleware(): RequestHandler {
-  if (!channelSecret) {
-    return (_req, res) => {
-      res.status(401).end()
-    }
-  }
-  const inner = lineMiddleware({ channelSecret })
   return (req, res, next) => {
-    inner(req as never, res as never, (err?: unknown) => {
-      if (err) {
-        if (err instanceof SignatureValidationFailed) {
-          res.status(401).end()
-          return
+    if (!cachedMiddleware) {
+      const { channelSecret } = config.lineMessaging()
+      if (!channelSecret) {
+        console.warn(
+          '[lineBot] LINE_MESSAGING_CHANNEL_SECRET is not set — inbound webhook requests will be rejected (401).',
+        )
+        cachedMiddleware = (_req, res) => res.status(401).end()
+      } else {
+        const inner = lineMiddleware({ channelSecret })
+        cachedMiddleware = (req, res, next) => {
+          inner(req as never, res as never, (err?: unknown) => {
+            if (err) {
+              if (err instanceof SignatureValidationFailed) {
+                res.status(401).end()
+                return
+              }
+              next(err as Error)
+              return
+            }
+            next()
+          })
         }
-        next(err as Error)
-        return
       }
-      next()
-    })
+    }
+    cachedMiddleware(req, res, next)
   }
 }
 
 // ─── Push (server-initiated) ─────────────────────────────────────────────────
 
 export async function pushText(lineUserId: string, text: string): Promise<void> {
-  if (!lineClient || !lineUserId) return
+  const client = getLineClient()
+  if (!client || !lineUserId) return
   try {
-    await lineClient.pushMessage({
+    await client.pushMessage({
       to: lineUserId,
       messages: [{ type: 'text', text }],
     })
@@ -78,9 +91,10 @@ export async function pushFlex(
   altText: string,
   contents: messagingApi.FlexContainer,
 ): Promise<void> {
-  if (!lineClient || !lineUserId) return
+  const client = getLineClient()
+  if (!client || !lineUserId) return
   try {
-    await lineClient.pushMessage({
+    await client.pushMessage({
       to: lineUserId,
       messages: [{ type: 'flex', altText, contents }],
     })
@@ -92,9 +106,10 @@ export async function pushFlex(
 // ─── Reply (in response to a webhook event) ──────────────────────────────────
 
 export async function replyText(replyToken: string, text: string): Promise<void> {
-  if (!lineClient || !replyToken) return
+  const client = getLineClient()
+  if (!client || !replyToken) return
   try {
-    await lineClient.replyMessage({
+    await client.replyMessage({
       replyToken,
       messages: [{ type: 'text', text }],
     })
@@ -108,9 +123,10 @@ export async function replyFlex(
   altText: string,
   contents: messagingApi.FlexContainer,
 ): Promise<void> {
-  if (!lineClient || !replyToken) return
+  const client = getLineClient()
+  if (!client || !replyToken) return
   try {
-    await lineClient.replyMessage({
+    await client.replyMessage({
       replyToken,
       messages: [{ type: 'flex', altText, contents }],
     })
@@ -130,9 +146,10 @@ export async function replyFlexWithText(
   contents: messagingApi.FlexContainer,
   text: string,
 ): Promise<void> {
-  if (!lineClient || !replyToken) return
+  const client = getLineClient()
+  if (!client || !replyToken) return
   try {
-    await lineClient.replyMessage({
+    await client.replyMessage({
       replyToken,
       messages: [
         { type: 'flex', altText, contents },

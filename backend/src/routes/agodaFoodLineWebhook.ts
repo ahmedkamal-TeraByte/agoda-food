@@ -1,10 +1,10 @@
 import { Router, type Request, type Response } from 'express'
 import type { webhook } from '@line/bot-sdk'
-import { lineWebhookMiddleware } from '../lib/lineBot'
-import { parseTextMessage, parsePostback } from '../lib/linePostback'
-import { handleMyActiveOrders } from '../services/lineActiveOrders'
-import { handleApprovePayment } from '../services/linePaymentReview'
-import { handleOrderDetails } from '../services/lineOrderDetails'
+import { lineWebhookMiddleware } from '@lib/lineBot'
+import { parseTextMessage, parsePostback } from '@lib/linePostback'
+import { handleMyActiveOrders } from '@services/lineActiveOrders'
+import { handleApprovePayment } from '@services/linePaymentReview'
+import { handleOrderDetails } from '@services/lineOrderDetails'
 
 const router = Router()
 

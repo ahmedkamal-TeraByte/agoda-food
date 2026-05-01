@@ -1,17 +1,17 @@
 import { Router, Request, Response, NextFunction } from 'express'
 import sharp from 'sharp'
 import { randomUUID } from 'crypto'
-import { Order } from '../models/Order'
-import { Restaurant } from '../models/Restaurant'
-import { MenuItem } from '../models/MenuItem'
-import { Payment } from '../models/Payment'
-import { requireUser, requireMerchant } from '../middleware/auth'
-import { getServiceDate } from '../lib/orderWindow'
-import { renderQrDataUrl } from '../lib/promptPay'
-import { privateStorage, publicStorage } from '../lib/storage'
-import { imageUpload } from '../lib/upload'
-import { pushText } from '../lib/lineBot'
-import { pushPaymentProofToMerchant } from '../services/linePaymentReview'
+import { Order } from '@models/Order'
+import { Restaurant } from '@models/Restaurant'
+import { MenuItem } from '@models/MenuItem'
+import { Payment } from '@models/Payment'
+import { requireUser, requireMerchant } from '@middleware/auth'
+import { getServiceDate } from '@lib/orderWindow'
+import { renderQrDataUrl } from '@lib/promptPay'
+import { getPrivateStorage, getPublicStorage } from '@lib/storage'
+import { imageUpload } from '@lib/upload'
+import { pushText } from '@lib/lineBot'
+import { pushPaymentProofToMerchant } from '@services/linePaymentReview'
 
 /**
  * How long we keep a payment-proof screenshot in object storage after its
@@ -107,7 +107,7 @@ router.post(
           name: menuItem.name,
           price: menuItem.price,
           imageUrl: menuItem.imageKey
-            ? publicStorage.publicUrl(menuItem.imageKey)
+            ? getPublicStorage().publicUrl(menuItem.imageKey)
             : undefined,
           quantity: input.quantity,
           note: input.note ?? '',
@@ -277,7 +277,7 @@ router.post(
         .toBuffer()
 
       const fileKey = `payment-proofs/${order._id}/${randomUUID()}.jpg`
-      await privateStorage.put(fileKey, processed, 'image/jpeg')
+      await getPrivateStorage().put(fileKey, processed, 'image/jpeg')
 
       // Append a new audit row for this attempt. Prior attempts (if any)
       // stay in the collection with their existing status — the cleanup cron
@@ -395,7 +395,7 @@ router.patch('/:id/status', requireMerchant, async (req: Request, res: Response)
     await order.save()
 
     if (status === 'in_delivery') {
-      const customer = await import('../models/User').then((m) => m.User.findById(order.userId))
+      const customer = await import('@models/User').then((m) => m.User.findById(order.userId))
       if (customer?.lineUserId) {
         await pushText(
           customer.lineUserId,
@@ -405,7 +405,7 @@ router.patch('/:id/status', requireMerchant, async (req: Request, res: Response)
     }
 
     if (status === 'delivered') {
-      const customer = await import('../models/User').then((m) => m.User.findById(order.userId))
+      const customer = await import('@models/User').then((m) => m.User.findById(order.userId))
       if (customer?.lineUserId) {
         await pushText(
           customer.lineUserId,

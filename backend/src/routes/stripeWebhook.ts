@@ -1,16 +1,17 @@
 import { Router, Request, Response } from 'express'
 import express from 'express'
-import { stripe } from '../lib/stripe'
-import { Order } from '../models/Order'
-import { Payment } from '../models/Payment'
-import { User } from '../models/User'
-import { pushText } from '../lib/lineBot'
+import { getStripe } from '@lib/stripe'
+import { Order } from '@models/Order'
+import { Payment } from '@models/Payment'
+import { User } from '@models/User'
+import { pushText } from '@lib/lineBot'
+import { config } from '@config/AppConfig'
 
 const router = Router()
 
 // Infer the event type from Stripe's constructEvent return value so we stay
 // compatible across Stripe SDK major versions without relying on the namespace.
-type StripeEvent = ReturnType<typeof stripe.webhooks.constructEvent>
+type StripeEvent = ReturnType<ReturnType<typeof getStripe>['webhooks']['constructEvent']>
 
 // IMPORTANT: This route uses express.raw() for raw body parsing so Stripe can
 // verify the webhook signature. It MUST be mounted in server.ts BEFORE
@@ -21,7 +22,7 @@ router.post(
   express.raw({ type: 'application/json' }),
   async (req: Request, res: Response) => {
     const sig = req.headers['stripe-signature']
-    const secret = process.env.STRIPE_WEBHOOK_SECRET
+    const secret = config.stripe().webhookSecret
 
     if (!sig || !secret) {
       res.status(400).send('Missing Stripe signature or webhook secret')
@@ -30,7 +31,7 @@ router.post(
 
     let event: StripeEvent
     try {
-      event = stripe.webhooks.constructEvent(req.body, sig, secret)
+      event = getStripe().webhooks.constructEvent(req.body, sig, secret)
     } catch (err) {
       console.error('[stripe webhook] signature verification failed:', err)
       res.status(400).send('Invalid signature')

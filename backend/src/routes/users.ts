@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express'
-import { User } from '../models/User'
-import { Order } from '../models/Order'
-import { requireUser } from '../middleware/auth'
+import { User } from '@models/User'
+import { Order } from '@models/Order'
+import { requireUser } from '@middleware/auth'
 
 const router = Router()
 

@@ -2,12 +2,10 @@
  * Thin wrappers around the two LINE Login API endpoints we need.
  * No LINE SDK — just plain HTTPS calls so the dependency footprint stays minimal.
  */
+import { config } from '@config/AppConfig'
 
 const TOKEN_ENDPOINT = 'https://api.line.me/oauth2/v2.1/token'
 const VERIFY_ENDPOINT = 'https://api.line.me/oauth2/v2.1/verify'
-
-const CHANNEL_ID = process.env.LINE_CHANNEL_ID ?? ''
-const CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET ?? ''
 
 export interface LineTokens {
   access_token: string
@@ -29,12 +27,14 @@ export async function exchangeCodeForTokens(
   code: string,
   redirectUri: string,
 ): Promise<LineTokens> {
+  const { channelId, channelSecret } = config.line()
+
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
     code,
     redirect_uri: redirectUri,
-    client_id: CHANNEL_ID,
-    client_secret: CHANNEL_SECRET,
+    client_id: channelId,
+    client_secret: channelSecret,
   })
 
   const res = await fetch(TOKEN_ENDPOINT, {
@@ -56,9 +56,11 @@ export async function exchangeCodeForTokens(
  * Both flows share this function so verification is always identical.
  */
 export async function verifyIdToken(idToken: string): Promise<LineClaims> {
+  const { channelId } = config.line()
+
   const body = new URLSearchParams({
     id_token: idToken,
-    client_id: CHANNEL_ID,
+    client_id: channelId,
   })
 
   const res = await fetch(VERIFY_ENDPOINT, {

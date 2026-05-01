@@ -1,15 +1,26 @@
 import Stripe from 'stripe'
+import { config } from '@config/AppConfig'
 
-const key = process.env.STRIPE_SECRET_KEY
-if (!key) {
-  console.warn('[stripe] STRIPE_SECRET_KEY not set; Stripe payments will fail at runtime.')
+let cachedStripe: InstanceType<typeof Stripe> | null = null
+
+export function getStripe(): InstanceType<typeof Stripe> {
+  if (cachedStripe) return cachedStripe
+  const { secretKey } = config.stripe()
+  if (!secretKey) {
+    console.warn('[stripe] STRIPE_SECRET_KEY not set; Stripe payments will fail at runtime.')
+  }
+  cachedStripe = new Stripe(secretKey || 'sk_test_missing', {
+    apiVersion: '2026-04-22.dahlia',
+    typescript: true,
+    appInfo: { name: 'agoda-food', version: '0.1.0' },
+  })
+  return cachedStripe
 }
 
-export const stripe = new Stripe(key ?? 'sk_test_missing', {
-  apiVersion: '2026-04-22.dahlia',
-  typescript: true,
-  appInfo: { name: 'agoda-food', version: '0.1.0' },
-})
+export function getStatementDescriptor(): string {
+  return config.stripe().statementDescriptor
+}
 
-export const STATEMENT_DESCRIPTOR = (process.env.STRIPE_STATEMENT_DESCRIPTOR ?? 'AGODA FOOD').slice(0, 22)
-export const QR_EXPIRY_MINUTES = Number(process.env.STRIPE_PROMPTPAY_QR_EXPIRY_MINUTES ?? 5)
+export function getQrExpiryMinutes(): number {
+  return config.stripe().qrExpiryMinutes
+}

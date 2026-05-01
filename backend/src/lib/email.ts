@@ -1,23 +1,20 @@
 import { Client, SendEmailV3_1, LibraryResponse } from 'node-mailjet'
-
-const MAILJET_API_KEY = process.env.MAILJET_API_KEY ?? ''
-const MAILJET_API_SECRET = process.env.MAILJET_API_SECRET ?? ''
-const MAIL_FROM = process.env.MAIL_FROM ?? 'agodaminton@outlook.com'
-const MAIL_FROM_NAME = process.env.MAIL_FROM_NAME ?? 'Agoda Food'
-const MAIL_DISABLED = (process.env.MAIL_DISABLED ?? 'false').toLowerCase() === 'true'
-const MAIL_SEND_TIMEOUT_MS = parseInt(process.env.MAIL_SEND_TIMEOUT_MS ?? '15000', 10)
+import { config } from '@config/AppConfig'
 
 let cachedClient: Client | null = null
 
 function getClient(): Client {
   if (cachedClient) return cachedClient
-  if (!MAILJET_API_KEY || !MAILJET_API_SECRET) {
+
+  const { mailjetKey, mailjetSecret, timeoutMs } = config.email()
+
+  if (!mailjetKey || !mailjetSecret) {
     throw new Error('MAILJET_API_KEY / MAILJET_API_SECRET are not configured')
   }
   cachedClient = new Client({
-    apiKey: MAILJET_API_KEY,
-    apiSecret: MAILJET_API_SECRET,
-    options: { timeout: MAIL_SEND_TIMEOUT_MS },
+    apiKey: mailjetKey,
+    apiSecret: mailjetSecret,
+    options: { timeout: timeoutMs },
   })
   return cachedClient
 }
@@ -34,7 +31,9 @@ export interface SendEmailParams {
  * When MAIL_DISABLED=true we just log — handy for tests / offline dev.
  */
 export async function sendEmail({ to, subject, html, text }: SendEmailParams): Promise<void> {
-  if (MAIL_DISABLED) {
+  const { disabled, from, fromName } = config.email()
+
+  if (disabled) {
     console.log(`[email:disabled] would send to=${to} subject="${subject}"`)
     return
   }
@@ -42,7 +41,7 @@ export async function sendEmail({ to, subject, html, text }: SendEmailParams): P
   const body: SendEmailV3_1.Body = {
     Messages: [
       {
-        From: { Email: MAIL_FROM, Name: MAIL_FROM_NAME },
+        From: { Email: from, Name: fromName },
         To: [{ Email: to }],
         Subject: subject,
         HTMLPart: html,

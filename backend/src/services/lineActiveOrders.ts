@@ -1,15 +1,15 @@
 import { Types } from 'mongoose'
-import { User } from '../models/User'
-import { Order } from '../models/Order'
-import type { OrderStatus } from '../models/Order'
-import { Restaurant } from '../models/Restaurant'
-import { replyText, replyFlex, replyFlexWithText } from '../lib/lineBot'
+import { User } from '@models/User'
+import { Order } from '@models/Order'
+import type { OrderStatus } from '@models/Order'
+import { Restaurant } from '@models/Restaurant'
+import { replyText, replyFlex, replyFlexWithText } from '@lib/lineBot'
 import {
   buildCustomerOrderBubble,
   buildMerchantOrderBubble,
   bubblesOrCarousel,
   type OrderSummary,
-} from '../lib/lineFlexBuilders'
+} from '@lib/lineFlexBuilders'
 
 const ACTIVE_STATUSES: OrderStatus[] = [
   'awaiting_payment',

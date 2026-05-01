@@ -1,13 +1,12 @@
 import { Router, Request, Response } from 'express'
-import { Restaurant } from '../models/Restaurant'
-import { MenuItem } from '../models/MenuItem'
-import { requireUser } from '../middleware/auth'
-import { generateOtp, verifyOtp } from '../lib/otp'
-import { publicStorage } from '../lib/storage'
+import { Restaurant } from '@models/Restaurant'
+import { MenuItem } from '@models/MenuItem'
+import { requireUser } from '@middleware/auth'
+import { generateOtp, verifyOtp } from '@lib/otp'
+import { getPublicStorage } from '@lib/storage'
+import { config } from '@config/AppConfig'
 
 const router = Router()
-
-const AGODA_EMAIL_DOMAIN = process.env.AGODA_EMAIL_DOMAIN ?? 'agoda.com'
 
 // GET /api/restaurants — list (active only unless the caller owns one)
 router.get('/', async (req: Request, res: Response) => {
@@ -16,7 +15,7 @@ router.get('/', async (req: Request, res: Response) => {
     let callerId: string | null = null
     if (authHeader.startsWith('Bearer ')) {
       try {
-        const { verifySession } = await import('../lib/jwt')
+        const { verifySession } = await import('@lib/jwt')
         callerId = verifySession(authHeader.slice(7).trim())
       } catch {
         // unauthenticated — fine
@@ -59,7 +58,7 @@ router.get('/:id/menu', async (req: Request, res: Response) => {
     const serialized = menuItems.map((item) => {
       const obj = item.toObject() as unknown as Record<string, unknown>
       obj.imageUrl = obj.imageKey
-        ? publicStorage.publicUrl(obj.imageKey as string)
+        ? getPublicStorage().publicUrl(obj.imageKey as string)
         : undefined
       return obj
     })
@@ -98,10 +97,11 @@ router.post(
       return
     }
 
+    const agodaEmailDomain = config.domain().agodaEmailDomain
     const referralEmail = referral.email.trim().toLowerCase()
-    if (!referralEmail.endsWith(`@${AGODA_EMAIL_DOMAIN}`)) {
+    if (!referralEmail.endsWith(`@${agodaEmailDomain}`)) {
       res.status(400).json({
-        error: `Referral email must be an @${AGODA_EMAIL_DOMAIN} address`,
+        error: `Referral email must be an @${agodaEmailDomain} address`,
         code: 'INVALID_REFERRAL_DOMAIN',
       })
       return

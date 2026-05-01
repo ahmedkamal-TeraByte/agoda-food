@@ -1,11 +1,11 @@
-import { Order, type IOrder } from '../models/Order'
-import { Restaurant } from '../models/Restaurant'
-import { User } from '../models/User'
-import { Payment } from '../models/Payment'
-import { privateStorage } from '../lib/storage'
-import { pushFlex, replyText } from '../lib/lineBot'
-import { buildOrderDetailsBubble, type OrderActionButton } from '../lib/lineFlexBuilders'
-import { buildMerchantOrderLiffUrl } from '../lib/lineLiff'
+import { Order, type IOrder } from '@models/Order'
+import { Restaurant } from '@models/Restaurant'
+import { User } from '@models/User'
+import { Payment } from '@models/Payment'
+import { getPrivateStorage } from '@lib/storage'
+import { pushFlex, replyText } from '@lib/lineBot'
+import { buildOrderDetailsBubble, type OrderActionButton } from '@lib/lineFlexBuilders'
+import { buildMerchantOrderLiffUrl } from '@lib/lineLiff'
 
 const SIGNED_URL_TTL_SECONDS = 24 * 60 * 60 // 24h — long enough for a merchant to react
 const PROOF_FILE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
@@ -28,7 +28,7 @@ export async function pushPaymentProofToMerchant(order: IOrder): Promise<void> {
   const owner = await User.findById(restaurant.ownerUserId).select('lineUserId').lean()
   if (!owner?.lineUserId) return
 
-  const signedUrl = await privateStorage.getSignedUrl(
+  const signedUrl = await getPrivateStorage().getSignedUrl(
     order.paymentProof.fileKey,
     SIGNED_URL_TTL_SECONDS,
   )

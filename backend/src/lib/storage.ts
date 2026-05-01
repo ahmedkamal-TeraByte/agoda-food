@@ -178,69 +178,76 @@ class LocalFsStorage implements PublicStorage {
 }
 
 // ---------------------------------------------------------------------------
-// Factory
+// Factory (lazy — initialised after config.load() runs at startup)
 // ---------------------------------------------------------------------------
-
-const accountId = process.env.R2_ACCOUNT_ID ?? ''
-
-// Private bucket
-const privateAccessKeyId = process.env.R2_ACCESS_KEY_ID ?? ''
-const privateSecretAccessKey = process.env.R2_SECRET_ACCESS_KEY ?? ''
-const privateBucket = process.env.R2_BUCKET ?? ''
-const hasPrivateR2 = Boolean(
-  accountId && privateAccessKeyId && privateSecretAccessKey && privateBucket,
-)
-
-// Public bucket
-const publicAccessKeyId = process.env.R2_PUBLIC_ACCESS_KEY_ID ?? ''
-const publicSecretAccessKey = process.env.R2_PUBLIC_SECRET_ACCESS_KEY ?? ''
-const publicBucket = process.env.R2_PUBLIC_BUCKET ?? ''
-const publicBaseUrl = (process.env.R2_PUBLIC_BASE_URL ?? '').replace(/\/$/, '')
-const hasPublicR2 = Boolean(
-  accountId &&
-    publicAccessKeyId &&
-    publicSecretAccessKey &&
-    publicBucket &&
-    publicBaseUrl,
-)
+import { config } from '@config/AppConfig'
 
 export const LOCAL_UPLOAD_DIR = path.resolve(process.cwd(), '..', '.uploads')
 export const LOCAL_PUBLIC_PATH = '/uploads'
 
 const localFs = new LocalFsStorage(LOCAL_UPLOAD_DIR, LOCAL_PUBLIC_PATH)
 
-export const privateStorage: Storage = hasPrivateR2
-  ? new R2Storage({
-      accountId,
-      accessKeyId: privateAccessKeyId,
-      secretAccessKey: privateSecretAccessKey,
-      bucket: privateBucket,
-    })
-  : localFs
+let cachedPrivate: Storage | null = null
+let cachedPublic: PublicStorage | null = null
 
-export const publicStorage: PublicStorage = hasPublicR2
-  ? new R2Storage({
-      accountId,
-      accessKeyId: publicAccessKeyId,
-      secretAccessKey: publicSecretAccessKey,
-      bucket: publicBucket,
-      publicBaseUrl,
-    })
-  : localFs
+export function getPrivateStorage(): Storage {
+  if (cachedPrivate) return cachedPrivate
 
-if (!hasPrivateR2) {
-  console.warn(
-    '[storage] private R2 credentials missing — using local filesystem at ' +
-      LOCAL_UPLOAD_DIR +
-      '. Set R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / R2_BUCKET for production.',
-  )
-}
-if (!hasPublicR2) {
-  console.warn(
-    '[storage] public R2 credentials missing — using local filesystem at ' +
-      LOCAL_UPLOAD_DIR +
-      '. Set R2_PUBLIC_ACCESS_KEY_ID / R2_PUBLIC_SECRET_ACCESS_KEY / R2_PUBLIC_BUCKET / R2_PUBLIC_BASE_URL for production.',
-  )
+  const r2 = config.r2()
+  const { accountId } = r2
+  const { accessKeyId, secretAccessKey, bucket } = r2.private
+  const hasR2 = Boolean(accountId && accessKeyId && secretAccessKey && bucket)
+
+  if (!hasR2) {
+    console.warn(
+      '[storage] private R2 credentials missing — using local filesystem at ' +
+        LOCAL_UPLOAD_DIR +
+        '. Set R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / R2_BUCKET for production.',
+    )
+    cachedPrivate = localFs
+  } else {
+    cachedPrivate = new R2Storage({ accountId, accessKeyId, secretAccessKey, bucket })
+  }
+
+  return cachedPrivate
 }
 
-export const isLocalStorage = !hasPrivateR2 || !hasPublicR2
+export function getPublicStorage(): PublicStorage {
+  if (cachedPublic) return cachedPublic
+
+  const r2 = config.r2()
+  const { accountId } = r2
+  const { accessKeyId, secretAccessKey, bucket, baseUrl } = r2.public
+  const hasR2 = Boolean(accountId && accessKeyId && secretAccessKey && bucket && baseUrl)
+
+  if (!hasR2) {
+    console.warn(
+      '[storage] public R2 credentials missing — using local filesystem at ' +
+        LOCAL_UPLOAD_DIR +
+        '. Set R2_PUBLIC_ACCESS_KEY_ID / R2_PUBLIC_SECRET_ACCESS_KEY / R2_PUBLIC_BUCKET / R2_PUBLIC_BASE_URL for production.',
+    )
+    cachedPublic = localFs
+  } else {
+    cachedPublic = new R2Storage({
+      accountId,
+      accessKeyId,
+      secretAccessKey,
+      bucket,
+      publicBaseUrl: baseUrl,
+    })
+  }
+
+  return cachedPublic
+}
+
+export function getIsLocalStorage(): boolean {
+  const r2 = config.r2()
+  const { accountId } = r2
+  const { accessKeyId: privKey, secretAccessKey: privSecret, bucket: privBucket } = r2.private
+  const { accessKeyId: pubKey, secretAccessKey: pubSecret, bucket: pubBucket, baseUrl } = r2.public
+
+  const hasPrivate = Boolean(accountId && privKey && privSecret && privBucket)
+  const hasPublic = Boolean(accountId && pubKey && pubSecret && pubBucket && baseUrl)
+
+  return !hasPrivate || !hasPublic
+}

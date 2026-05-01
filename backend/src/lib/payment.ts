@@ -12,10 +12,11 @@
  *   - Trigger payment success: stripe trigger payment_intent.succeeded
  *     (or use Stripe Dashboard → Payment Intents → confirm a test PI)
  */
-import { IOrder } from '../models/Order'
-import { Payment } from '../models/Payment'
-import { User } from '../models/User'
-import { stripe, STATEMENT_DESCRIPTOR, QR_EXPIRY_MINUTES } from './stripe'
+import { IOrder } from '@models/Order'
+import { Payment } from '@models/Payment'
+import { User } from '@models/User'
+import { getStripe, getStatementDescriptor, getQrExpiryMinutes } from './stripe'
+import { config } from '@config/AppConfig'
 
 export type PromptPayStatus = 'pending' | 'paid' | 'expired' | 'failed'
 
@@ -45,18 +46,19 @@ export class StripePromptPayProvider implements PaymentProvider {
 
   async createPromptPayPayment(order: IOrder): Promise<PromptPayQR> {
     const amount = Math.round(order.total * 100) // THB → satang
-    const expiresAt = new Date(Date.now() + QR_EXPIRY_MINUTES * 60_000)
+    const qrExpiryMinutes = getQrExpiryMinutes()
+    const expiresAt = new Date(Date.now() + qrExpiryMinutes * 60_000)
 
     // Time-binned idempotency key: all retries within the same QR window map to
     // the same Stripe PI, preventing duplicate charges on double-click.
-    const windowIndex = Math.floor(Date.now() / (QR_EXPIRY_MINUTES * 60_000))
+    const windowIndex = Math.floor(Date.now() / (qrExpiryMinutes * 60_000))
     const idempotencyKey = `order_${order._id}_${windowIndex}`
 
     // Stripe requires billing_details.email for PromptPay
     const user = await User.findById(order.userId)
     const email = user?.email ?? `order-${order._id}@agoda-food.local`
 
-    const pi = await stripe.paymentIntents.create(
+    const pi = await getStripe().paymentIntents.create(
       {
         amount,
         currency: 'thb',
@@ -66,7 +68,7 @@ export class StripePromptPayProvider implements PaymentProvider {
         },
         payment_method_types: ['promptpay'],
         confirm: true,
-        statement_descriptor: STATEMENT_DESCRIPTOR,
+        statement_descriptor: getStatementDescriptor(),
         description: `Order ${order._id} — ${order.restaurantName}`,
         metadata: {
           orderId: order._id.toString(),
@@ -108,7 +110,7 @@ export class StripePromptPayProvider implements PaymentProvider {
   }
 
   async retrievePromptPayPayment(piId: string): Promise<PromptPayQR> {
-    const pi = await stripe.paymentIntents.retrieve(piId)
+    const pi = await getStripe().paymentIntents.retrieve(piId)
 
     if (pi.status === 'succeeded') {
       return { paymentIntentId: pi.id, qrImageUrl: '', qrSvgUrl: '', qrData: '', expiresAt: new Date(0), amount: pi.amount, currency: 'thb', status: 'paid' }
@@ -149,7 +151,7 @@ export class MockPaymentProvider implements PaymentProvider {
 
   async createPromptPayPayment(order: IOrder): Promise<PromptPayQR> {
     const ref = `mock_${order._id}_${Date.now()}`
-    const expiresAt = new Date(Date.now() + QR_EXPIRY_MINUTES * 60_000)
+    const expiresAt = new Date(Date.now() + getQrExpiryMinutes() * 60_000)
 
     await Payment.findOneAndUpdate(
       { providerRef: ref },
@@ -200,9 +202,15 @@ export class MockPaymentProvider implements PaymentProvider {
 }
 
 // ---------------------------------------------------------------------------
-// Export the active provider
+// Lazy provider factory
 // ---------------------------------------------------------------------------
 
-export const defaultProvider: PaymentProvider = process.env.STRIPE_SECRET_KEY
-  ? new StripePromptPayProvider()
-  : new MockPaymentProvider()
+let cachedProvider: PaymentProvider | null = null
+
+export function getDefaultProvider(): PaymentProvider {
+  if (cachedProvider) return cachedProvider
+  cachedProvider = config.stripe().secretKey
+    ? new StripePromptPayProvider()
+    : new MockPaymentProvider()
+  return cachedProvider
+}

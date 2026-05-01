@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express'
-import { requireUser } from '../middleware/auth'
-import { generateOtp, verifyOtp } from '../lib/otp'
+import { requireUser } from '@middleware/auth'
+import { generateOtp, verifyOtp } from '@lib/otp'
 
 const router = Router()
 

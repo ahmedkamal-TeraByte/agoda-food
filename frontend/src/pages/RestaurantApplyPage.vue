@@ -12,11 +12,11 @@ type Step = 'form' | 'otp'
 const step = ref<Step>('form')
 const restaurantId = ref<string | null>(null)
 
+// Onboarding intentionally captures the bare minimum — name, cuisine, and a
+// referral. Cover photo / logo are added later from the merchant settings tab.
 const form = reactive({
   name: '',
   cuisine: '',
-  imageUrl: '',
-  logoUrl: '',
   referralName: '',
   referralEmail: '',
 })
@@ -51,8 +51,6 @@ async function submitApplication() {
     const restaurant = await applyForRestaurant({
       name: form.name.trim(),
       cuisine: form.cuisine.trim(),
-      imageUrl: form.imageUrl.trim() || undefined,
-      logoUrl: form.logoUrl.trim() || undefined,
       referral: { name: form.referralName.trim(), email: form.referralEmail.trim() },
     })
     restaurantId.value = restaurant.id
@@ -133,17 +131,9 @@ async function submitOtp() {
               class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
           </div>
 
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1.5">Cover photo URL</label>
-            <input v-model="form.imageUrl" type="url" placeholder="https://..."
-              class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
-          </div>
-
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1.5">Logo URL</label>
-            <input v-model="form.logoUrl" type="url" placeholder="https://..."
-              class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
-          </div>
+          <p class="text-xs text-gray-400">
+            You can add a cover photo and logo from the Settings tab once your restaurant is verified.
+          </p>
 
           <div class="border-t border-gray-100 pt-4">
             <h2 class="font-semibold text-gray-800 mb-3">Agoda referral</h2>

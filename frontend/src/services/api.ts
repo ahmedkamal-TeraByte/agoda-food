@@ -216,8 +216,6 @@ export async function fetchRestaurantWithMenu(
 export interface ApplyRestaurantPayload {
   name: string;
   cuisine: string;
-  imageUrl?: string;
-  logoUrl?: string;
   referral: { name: string; email: string };
 }
 

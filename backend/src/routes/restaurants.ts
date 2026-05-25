@@ -68,7 +68,17 @@ router.get('/:id/menu', async (req: Request, res: Response) => {
   }
 })
 
-// POST /api/restaurants/apply — authenticated, creates a draft restaurant
+// POST /api/restaurants/apply — authenticated, creates a draft restaurant.
+//
+// Onboarding intentionally captures the bare minimum (name, cuisine, referral).
+// Cover photo / logo are uploaded later from the merchant settings tab; we
+// seed placeholder URLs here so the Restaurant model's required fields are
+// satisfied.
+const PLACEHOLDER_COVER_URL =
+  'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&auto=format&fit=crop'
+const PLACEHOLDER_LOGO_URL =
+  'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=200&auto=format&fit=crop'
+
 router.post(
   '/apply',
   requireUser,
@@ -79,14 +89,12 @@ router.post(
       {
         name?: string
         cuisine?: string
-        imageUrl?: string
-        logoUrl?: string
         referral?: { name?: string; email?: string }
       }
     >,
     res: Response,
   ) => {
-    const { name, cuisine, imageUrl, logoUrl, referral } = req.body
+    const { name, cuisine, referral } = req.body
 
     if (!name || !cuisine) {
       res.status(400).json({ error: 'name and cuisine are required' })
@@ -115,8 +123,8 @@ router.post(
       const restaurant = await Restaurant.create({
         name: name.trim(),
         cuisine: cuisine.trim(),
-        imageUrl: imageUrl?.trim() ?? 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&auto=format&fit=crop',
-        logoUrl: logoUrl?.trim() ?? 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=200&auto=format&fit=crop',
+        imageUrl: PLACEHOLDER_COVER_URL,
+        logoUrl: PLACEHOLDER_LOGO_URL,
         rating: 0,
         reviewCount: 0,
         deliveryTime: '30–45 min',

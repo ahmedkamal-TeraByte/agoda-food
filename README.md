@@ -18,7 +18,7 @@ agoda-food/
 
 ## Prerequisites
 
-- Node 20+
+- Node 20++
 - MongoDB running locally on `mongodb://localhost:27017` (or set `MONGODB_URI`)
 
 ## Install

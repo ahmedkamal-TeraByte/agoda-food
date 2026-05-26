@@ -68,8 +68,6 @@ router.get('/:id/menu', async (req: Request, res: Response) => {
   }
 })
 
-// POST /api/restaurants/apply — authenticated, creates a draft restaurant.
-//
 // Onboarding intentionally captures the bare minimum (name, cuisine, referral).
 // Cover photo / logo are uploaded later from the merchant settings tab; we
 // seed placeholder URLs here so the Restaurant model's required fields are
@@ -79,6 +77,86 @@ const PLACEHOLDER_COVER_URL =
 const PLACEHOLDER_LOGO_URL =
   'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=200&auto=format&fit=crop'
 
+/**
+ * Validate an Agoda-domain referral email against the configured domain.
+ * Returns the normalised (lowercased, trimmed) email on success, or null on
+ * failure. The caller is responsible for sending the appropriate 400 response.
+ */
+function normaliseReferralEmail(email: string): string | null {
+  const normalised = email.trim().toLowerCase()
+  const domain = config.domain().agodaEmailDomain
+  return normalised.endsWith(`@${domain}`) ? normalised : null
+}
+
+/**
+ * Returns true if the user already owns an "established" (non-draft)
+ * restaurant — used to reject duplicate applications.
+ */
+async function userHasActiveRestaurant(userId: string): Promise<boolean> {
+  const existing = await Restaurant.findOne({
+    ownerUserId: userId,
+    status: { $ne: 'draft' },
+  }).select('_id')
+  return existing !== null
+}
+
+// POST /api/restaurants/apply/send-otp — step 1 of merchant onboarding.
+//
+// Only sends the referral OTP; deliberately does NOT create the Restaurant
+// document yet. The old flow persisted a draft up-front, which leaked stale
+// drafts whenever an applicant abandoned the OTP step.
+router.post(
+  '/apply/send-otp',
+  requireUser,
+  async (
+    req: Request<object, object, { referralEmail?: string }>,
+    res: Response,
+  ) => {
+    const { referralEmail } = req.body
+    if (!referralEmail) {
+      res.status(400).json({ error: 'referralEmail is required' })
+      return
+    }
+
+    const email = normaliseReferralEmail(referralEmail)
+    if (!email) {
+      res.status(400).json({
+        error: `Referral email must be an @${config.domain().agodaEmailDomain} address`,
+        code: 'INVALID_REFERRAL_DOMAIN',
+      })
+      return
+    }
+
+    try {
+      if (await userHasActiveRestaurant(req.user!._id.toString())) {
+        res.status(409).json({
+          error: 'You already have a restaurant',
+          code: 'ALREADY_HAS_RESTAURANT',
+        })
+        return
+      }
+
+      // Clean up any orphaned drafts left behind by the old two-step flow
+      // (pre-this-change). New apply flow never persists drafts, so any draft
+      // owned by this user is dead data.
+      await Restaurant.deleteMany({ ownerUserId: req.user!._id, status: 'draft' })
+
+      await generateOtp(email, 'referral_verify')
+      console.log(`[restaurants/apply] OTP sent to referral ${email}`)
+
+      res.json({ ok: true })
+    } catch (err) {
+      console.error(err)
+      res.status(500).json({ error: 'Failed to send verification code' })
+    }
+  },
+)
+
+// POST /api/restaurants/apply — step 2 (and final) of merchant onboarding.
+//
+// Verifies the OTP FIRST and only then persists the restaurant + promotes the
+// user to merchant. If the OTP is invalid, nothing is written to the DB, so a
+// page reload or close mid-flow never leaks a partial application.
 router.post(
   '/apply',
   requireUser,
@@ -90,11 +168,12 @@ router.post(
         name?: string
         cuisine?: string
         referral?: { name?: string; email?: string }
+        code?: string
       }
     >,
     res: Response,
   ) => {
-    const { name, cuisine, referral } = req.body
+    const { name, cuisine, referral, code } = req.body
 
     if (!name || !cuisine) {
       res.status(400).json({ error: 'name and cuisine are required' })
@@ -104,21 +183,37 @@ router.post(
       res.status(400).json({ error: 'referral.name and referral.email are required' })
       return
     }
+    if (!code) {
+      res.status(400).json({ error: 'code is required', code: 'OTP_MISSING' })
+      return
+    }
 
-    const agodaEmailDomain = config.domain().agodaEmailDomain
-    const referralEmail = referral.email.trim().toLowerCase()
-    if (!referralEmail.endsWith(`@${agodaEmailDomain}`)) {
+    const referralEmail = normaliseReferralEmail(referral.email)
+    if (!referralEmail) {
       res.status(400).json({
-        error: `Referral email must be an @${agodaEmailDomain} address`,
+        error: `Referral email must be an @${config.domain().agodaEmailDomain} address`,
         code: 'INVALID_REFERRAL_DOMAIN',
       })
       return
     }
 
     try {
-      // Send OTP to the referral email
-      await generateOtp(referralEmail, 'referral_verify')
-      console.log(`[restaurants/apply] OTP sent to referral ${referralEmail}`)
+      if (await userHasActiveRestaurant(req.user!._id.toString())) {
+        res.status(409).json({
+          error: 'You already have a restaurant',
+          code: 'ALREADY_HAS_RESTAURANT',
+        })
+        return
+      }
+
+      const valid = await verifyOtp(referralEmail, 'referral_verify', code.trim())
+      if (!valid) {
+        res.status(400).json({ error: 'Invalid or expired OTP', code: 'OTP_INVALID' })
+        return
+      }
+
+      // OTP is good — clean up stragglers and persist a fresh, active restaurant.
+      await Restaurant.deleteMany({ ownerUserId: req.user!._id, status: 'draft' })
 
       const restaurant = await Restaurant.create({
         name: name.trim(),
@@ -132,60 +227,15 @@ router.post(
         minOrder: 0,
         tags: [],
         isOpen: false,
-        status: 'draft',
+        status: 'active',
         ownerUserId: req.user!._id,
-        referral: { name: referral.name.trim(), email: referralEmail },
+        referral: {
+          name: referral.name.trim(),
+          email: referralEmail,
+          verifiedAt: new Date(),
+        },
         orderWindow: { openHour: 17, closeHour: 10, deliveryHour: 12 },
       })
-
-      res.status(201).json(restaurant)
-    } catch (err) {
-      console.error(err)
-      res.status(500).json({ error: 'Failed to create restaurant application' })
-    }
-  },
-)
-
-// POST /api/restaurants/:id/verify-referral — applicant submits OTP from referral email
-router.post(
-  '/:id/verify-referral',
-  requireUser,
-  async (req: Request<{ id: string }, object, { code?: string }>, res: Response) => {
-    const { code } = req.body
-    if (!code) {
-      res.status(400).json({ error: 'code is required' })
-      return
-    }
-
-    try {
-      const restaurant = await Restaurant.findById(req.params.id)
-      if (!restaurant) {
-        res.status(404).json({ error: 'Restaurant not found' })
-        return
-      }
-      if (restaurant.ownerUserId.toString() !== req.user!._id.toString()) {
-        res.status(403).json({ error: 'You did not apply for this restaurant' })
-        return
-      }
-      if (restaurant.status !== 'draft') {
-        res.status(409).json({ error: 'Restaurant is already verified' })
-        return
-      }
-      if (!restaurant.referral?.email) {
-        res.status(400).json({ error: 'No referral email on record' })
-        return
-      }
-
-      const valid = await verifyOtp(restaurant.referral.email, 'referral_verify', code.trim())
-      if (!valid) {
-        res.status(400).json({ error: 'Invalid or expired OTP', code: 'OTP_INVALID' })
-        return
-      }
-
-      // Promote restaurant to active and owner to merchant role
-      restaurant.status = 'active'
-      restaurant.referral.verifiedAt = new Date()
-      await restaurant.save()
 
       const user = req.user!
       if (user.role !== 'merchant') {
@@ -193,10 +243,10 @@ router.post(
         await user.save()
       }
 
-      res.json({ restaurant, user })
+      res.status(201).json({ restaurant, user })
     } catch (err) {
       console.error(err)
-      res.status(500).json({ error: 'Failed to verify referral' })
+      res.status(500).json({ error: 'Failed to create restaurant' })
     }
   },
 )

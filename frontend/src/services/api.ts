@@ -217,28 +217,33 @@ export interface ApplyRestaurantPayload {
   name: string;
   cuisine: string;
   referral: { name: string; email: string };
+  code: string;
 }
 
+/**
+ * Step 1: email the referral a one-time code. Does NOT create any restaurant
+ * — the backend only persists on the final `applyForRestaurant` call.
+ */
+export async function sendApplyOtp(referralEmail: string): Promise<void> {
+  await request<{ ok: true }>("/restaurants/apply/send-otp", {
+    method: "POST",
+    body: JSON.stringify({ referralEmail }),
+  });
+}
+
+/**
+ * Step 2: submit the full application + the OTP. Server verifies the code
+ * atomically and only writes to the DB on success.
+ */
 export async function applyForRestaurant(
   payload: ApplyRestaurantPayload,
-): Promise<Restaurant> {
-  const data = await request<Record<string, unknown>>("/restaurants/apply", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-  return toRestaurant(data);
-}
-
-export async function verifyReferral(
-  restaurantId: string,
-  code: string,
 ): Promise<{ restaurant: Restaurant; user: User }> {
   const data = await request<{
     restaurant: Record<string, unknown>;
     user: Record<string, unknown>;
-  }>(`/restaurants/${restaurantId}/verify-referral`, {
+  }>("/restaurants/apply", {
     method: "POST",
-    body: JSON.stringify({ code }),
+    body: JSON.stringify(payload),
   });
   return { restaurant: toRestaurant(data.restaurant), user: toUser(data.user) };
 }

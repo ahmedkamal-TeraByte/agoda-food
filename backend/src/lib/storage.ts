@@ -12,7 +12,16 @@
  * Each bucket has its own scoped R2 API token, so a leaked credential on one
  * path can't touch the other.
  *
- * Required env vars (R2):
+ * Storage selection policy:
+ *
+ *   * `NODE_ENV !== 'production'`  — ALWAYS use the local filesystem (under
+ *     `<repo>/.uploads/`). R2 credentials are ignored even if present, so
+ *     dev runs never touch the cloud bucket and never burn quota.
+ *   * `NODE_ENV === 'production'`  — use R2 when all required keys for that
+ *     bucket are configured; otherwise fall back to the same local-fs path
+ *     (with a warning). Local storage is NOT durable across redeploys.
+ *
+ * Required config keys for R2 (set in the `app_config` Mongo collection):
  *   R2_ACCOUNT_ID                — Cloudflare account ID (shared)
  *
  *   # private bucket
@@ -25,10 +34,6 @@
  *   R2_PUBLIC_SECRET_ACCESS_KEY  — token secret for the public bucket
  *   R2_PUBLIC_BUCKET             — public bucket name
  *   R2_PUBLIC_BASE_URL           — public read URL prefix (no trailing /)
- *
- * If any of those are missing, we fall back to a local-filesystem storage
- * (writes under <repo>/.uploads/) so the app boots cleanly in dev without
- * cloud creds. Local storage is NOT durable across redeploys.
  */
 import {
   S3Client,
@@ -182,8 +187,15 @@ class LocalFsStorage implements PublicStorage {
 // ---------------------------------------------------------------------------
 import { config } from '@config/AppConfig'
 
-export const LOCAL_UPLOAD_DIR = path.resolve(process.cwd(), '..', '.uploads')
+// Resolved from this module's location (not process.cwd()) so the path is the
+// same whether the server is launched from the repo root, the backend
+// workspace, or via the compiled dist build:
+//   backend/src/lib/storage.ts   → ../../../.uploads = <repo>/.uploads
+//   backend/dist/lib/storage.js  → ../../../.uploads = <repo>/.uploads
+export const LOCAL_UPLOAD_DIR = path.resolve(__dirname, '..', '..', '..', '.uploads')
 export const LOCAL_PUBLIC_PATH = '/uploads'
+
+const IS_PROD = process.env.NODE_ENV === 'production'
 
 const localFs = new LocalFsStorage(LOCAL_UPLOAD_DIR, LOCAL_PUBLIC_PATH)
 
@@ -192,6 +204,15 @@ let cachedPublic: PublicStorage | null = null
 
 export function getPrivateStorage(): Storage {
   if (cachedPrivate) return cachedPrivate
+
+  if (!IS_PROD) {
+    console.warn(
+      '[storage] non-production env — private storage forced to local filesystem at ' +
+        LOCAL_UPLOAD_DIR,
+    )
+    cachedPrivate = localFs
+    return cachedPrivate
+  }
 
   const r2 = config.r2()
   const { accountId } = r2
@@ -214,6 +235,15 @@ export function getPrivateStorage(): Storage {
 
 export function getPublicStorage(): PublicStorage {
   if (cachedPublic) return cachedPublic
+
+  if (!IS_PROD) {
+    console.warn(
+      '[storage] non-production env — public storage forced to local filesystem at ' +
+        LOCAL_UPLOAD_DIR,
+    )
+    cachedPublic = localFs
+    return cachedPublic
+  }
 
   const r2 = config.r2()
   const { accountId } = r2
@@ -241,6 +271,9 @@ export function getPublicStorage(): PublicStorage {
 }
 
 export function getIsLocalStorage(): boolean {
+  // Non-prod ALWAYS uses local storage, regardless of whether R2 creds exist.
+  if (!IS_PROD) return true
+
   const r2 = config.r2()
   const { accountId } = r2
   const { accessKeyId: privKey, secretAccessKey: privSecret, bucket: privBucket } = r2.private

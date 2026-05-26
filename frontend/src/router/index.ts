@@ -15,6 +15,7 @@ import MerchantSettings from '../pages/MerchantSettings.vue'
 import MerchantMenu from '../pages/MerchantMenu.vue'
 import MerchantCategories from '../pages/MerchantCategories.vue'
 import MerchantOrders from '../pages/MerchantOrders.vue'
+import HelpPage from '../pages/HelpPage.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -31,6 +32,7 @@ export const router = createRouter({
     { path: '/profile', component: ProfilePage },
     { path: '/orders', component: OrdersPage },
     { path: '/restaurants/apply', component: RestaurantApplyPage, meta: { requiresAuth: true } },
+    { path: '/help', component: HelpPage },
     { path: '/merchant', redirect: '/merchant/orders' },
     { path: '/merchant/orders', component: MerchantOrders, meta: { requiresMerchant: true } },
     { path: '/merchant/menu', component: MerchantMenu, meta: { requiresMerchant: true } },

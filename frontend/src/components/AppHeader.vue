@@ -100,6 +100,9 @@ onBeforeUnmount(() => document.removeEventListener('click', handleDocClick))
             <button @click="go('/orders')" class="w-full text-left px-4 py-2 hover:bg-gray-50">
               My orders
             </button>
+            <button @click="go('/help')" class="w-full text-left px-4 py-2 hover:bg-gray-50">
+              Help &amp; FAQ
+            </button>
             <button v-if="isMerchant" @click="go('/merchant')" class="w-full text-left px-4 py-2 hover:bg-gray-50 text-brand-600 font-medium">
               Merchant dashboard
             </button>
@@ -125,6 +128,16 @@ onBeforeUnmount(() => document.removeEventListener('click', handleDocClick))
           class="bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-1.5 rounded-full text-sm font-medium"
         >
           Log in
+        </button>
+
+        <button
+          @click="router.push('/help')"
+          class="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-1.5 rounded-full text-sm font-medium"
+          aria-label="Help and FAQ"
+          title="Help &amp; FAQ"
+        >
+          <span aria-hidden="true">❓</span>
+          <span class="hidden sm:inline">Help</span>
         </button>
 
         <button
